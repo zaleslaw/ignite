@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.ml.clustering.kmeans;
+package org.apache.ignite.ml.clustering.dbscan;
 
 import java.util.Arrays;
 import java.util.List;
@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.clustering.ClusterizationModel;
+import org.apache.ignite.ml.clustering.kmeans.KMeansModelFormat;
 import org.apache.ignite.ml.math.Tracer;
 import org.apache.ignite.ml.math.distances.DistanceMeasure;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
@@ -31,7 +32,7 @@ import org.apache.ignite.ml.util.ModelTrace;
 /**
  * This class encapsulates result of clusterization by KMeans algorithm.
  */
-public class KMeansModel implements ClusterizationModel<Vector, Integer>, Exportable<KMeansModelFormat> {
+public class DBSCANModel implements ClusterizationModel<Vector, Integer>, Exportable<KMeansModelFormat> {
     /** Centers of clusters. */
     private final Vector[] centers;
 
@@ -41,11 +42,10 @@ public class KMeansModel implements ClusterizationModel<Vector, Integer>, Export
     /**
      * Construct KMeans model with given centers and distanceMeasure measure.
      *
-     * @param centers Centers.
      * @param distanceMeasure Distance measure.
      */
-    public KMeansModel(Vector[] centers, DistanceMeasure distanceMeasure) {
-        this.centers = centers;
+    public DBSCANModel(DistanceMeasure distanceMeasure) {
+        this.centers = null;
         this.distanceMeasure = distanceMeasure;
     }
 
@@ -109,7 +109,7 @@ public class KMeansModel implements ClusterizationModel<Vector, Integer>, Export
         if (obj == null || getClass() != obj.getClass())
             return false;
 
-        KMeansModel that = (KMeansModel)obj;
+        DBSCANModel that = (DBSCANModel)obj;
 
         return distanceMeasure.equals(that.distanceMeasure) && Arrays.deepEquals(centers, that.centers);
     }

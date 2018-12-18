@@ -31,7 +31,6 @@ public class LabeledVectorSet<L, Row extends LabeledVector> extends Dataset<Row>
      * Default constructor (required by Externalizable).
      */
     public LabeledVectorSet() {
-        super();
     }
 
     /**
@@ -204,11 +203,11 @@ public class LabeledVectorSet<L, Row extends LabeledVector> extends Dataset<Row>
 
     /** Makes copy with new Label objects and old features and Metadata objects. */
     public LabeledVectorSet copy(){
-        LabeledVectorSet res = new LabeledVectorSet(this.data, this.colSize);
-        res.isDistributed = this.isDistributed;
-        res.meta = this.meta;
+        LabeledVectorSet res = new LabeledVectorSet(data, colSize);
+        res.isDistributed = isDistributed;
+        res.meta = meta;
         for (int i = 0; i < rowSize; i++)
-            res.setLabel(i, this.label(i));
+            res.setLabel(i, label(i));
 
         return res;
     }
