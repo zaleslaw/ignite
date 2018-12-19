@@ -126,7 +126,7 @@ public class SandboxMLCache {
 
         CacheConfiguration<Integer, Vector> cacheConfiguration = new CacheConfiguration<>();
         cacheConfiguration.setName("TUTORIAL_" + UUID.randomUUID());
-        cacheConfiguration.setAffinity(new RendezvousAffinityFunction(false, 10));
+        cacheConfiguration.setAffinity(new RendezvousAffinityFunction(false, 1));
 
         return ignite.createCache(cacheConfiguration);
     }

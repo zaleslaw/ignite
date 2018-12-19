@@ -30,13 +30,12 @@ import org.apache.ignite.ml.math.primitives.vector.Vector;
  */
 public class LabeledVector<V extends Vector, L> extends DatasetRow<V> {
     /** Label. */
-    private L lb;
+    protected L lb;
 
     /**
      * Default constructor.
      */
     public LabeledVector() {
-        super();
     }
 
     /**

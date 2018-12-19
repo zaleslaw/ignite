@@ -49,6 +49,10 @@ public class CacheBasedDatasetBuilder<K, V> implements DatasetBuilder<K, V> {
     /** Template of the name of Ignite Cache containing partition {@code context}. */
     private static final String DATASET_CACHE_TEMPLATE = "%s_DATASET_%s";
 
+    public Ignite getIgnite() {
+        return ignite;
+    }
+
     /** Ignite instance. */
     private final Ignite ignite;
 

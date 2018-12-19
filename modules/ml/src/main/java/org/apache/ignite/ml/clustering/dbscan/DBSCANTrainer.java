@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.ignite.lang.IgniteBiTuple;
+import org.apache.ignite.ml.clustering.VectorStatus;
 import org.apache.ignite.ml.dataset.Dataset;
 import org.apache.ignite.ml.dataset.DatasetBuilder;
 import org.apache.ignite.ml.dataset.PartitionDataBuilder;
@@ -43,6 +44,11 @@ import org.apache.ignite.ml.trainers.SingleLabelDatasetTrainer;
  * The trainer for DBSCAN algorithm.
  *
  * NOTE: test more than 1000 rows
+ *
+ * NOTE: This implementation uses random partitioning
+ *
+ * NOTE: the minimumNumOfClusterMembers in each partition should be calculated as minimumNumOfClusterMembers/amount of partitions
+ * and epsilon should be recalculated according amount of partitions
  */
 public class DBSCANTrainer extends SingleLabelDatasetTrainer<DBSCANModel> {
     public static final int MAX_AMOUNT_OF_CLUSTERS = 1_000_000_000;
@@ -58,13 +64,7 @@ public class DBSCANTrainer extends SingleLabelDatasetTrainer<DBSCANModel> {
     /** KMeans initializer. */
     private long seed;
 
-    /** Status of a point during the clustering process. */
-    private enum VectorStatus {
-        /** The point has is considered to be noise. */
-        NOISE,
-        /** The point is already part of a cluster. */
-        PART_OF_CLUSTER
-    }
+
 
     /**
      * Trains model based on the specified data.
@@ -111,60 +111,107 @@ public class DBSCANTrainer extends SingleLabelDatasetTrainer<DBSCANModel> {
 
            /* if (cols == null)
                 return getLastTrainedModelOrThrowEmptyDatasetException(mdl);*/
+            Map<Double, Set<Double>> mapping = new HashMap<>();
+            mapping.put(111.0, new HashSet<>());
+
+            Map<LabeledVector, VectorStatus> visitedPoints = new HashMap<>();
+            Map<Double, List<LabeledVector>> locClusters = new HashMap<>();
 
             dataset.compute((data, env) -> {
-                Map<LabeledVector, VectorStatus> visitedPoints = new HashMap<>();
                 double clsLb = env.partition() * MAX_AMOUNT_OF_CLUSTERS;
 
-                Map<Double, List<LabeledVector>> clusters = new HashMap<>(); // class label and list of class members
+                // class label and list of class members
 
                 for (int i = 0; i < data.rowSize(); i++) {
                     LabeledVector pnt = data.getRow(i);
 
                     if (!visitedPoints.containsKey(pnt)) {
-                        List<LabeledVector> neighbours = getNeighbors(pnt, data);
+                        List<LabeledVector> neighbours = getNeighbors(pnt, data); // TODO: could be indexed by local KD-Tree
 
                         if (neighbours.size() > minimumNumOfClusterMembers) {
                             clsLb += 1;
-                            clusters.put(clsLb, new ArrayList<>());
-                            expandCluster(clusters.get(clsLb), pnt, neighbours, data, visitedPoints);
+                            locClusters.put(clsLb, new ArrayList<>());
+                            expandCluster(locClusters.get(clsLb), pnt, neighbours, data, visitedPoints);
                         }
                         else
                             visitedPoints.put(pnt, VectorStatus.NOISE);
                     }
                 }
-
-                clusters.forEach(
-                    (k, v) -> {
-
-                        try {
-                            Thread.sleep(1000);
-                        }
-                        catch (InterruptedException e1) {
-                            e1.printStackTrace();
-                        }
-                        System.out.println("Cluster: " + k + " size " + v.size());
-                        v.forEach(e -> {
-                            System.out.println("Class" + e.label());
-                            // System.out.print("Guid" + e.features().guid());
-
-                            Tracer.showAscii(e.features());
-                        });
-                    }
-                );
-
-                //reduce amount of points in each cluster (drop граница или внутренности?) или просто проредить точки сгущения?
-                // это может быть параметром approximate coeeficient при коээфициенте равном 1 - все точки перемещаем, чтобы склеить кластера
-                // а может быть можно переместить упакованную информацию о кластерах и ее склеить - это граница в евклидовом смысле
-                // можно рандомно, монте-карлово брать точки из попарных кластеров, чтобы проверить гипотезу о склейке или жестко упаковать инфу о точках в какой-то binary format
-                // нужна процедура внутри каждой партиции - поиск опорных точек в каждом кластере, просто рандомная подвыборка для перемешения дальше не больше k экземпляров, например
-                // причем желательно не нарушать основное свойство кластера из вики
-
-                // т.е. входной параметр - не более k кандидатов как в ANN число кластеров, если k = 0 или <0 то берем всех кандататов и тащим через reduce
-                // есть опасность, что они все упададут в какие-то точки згущения - можно после рандомной генерации проверять, что не соседи *10 попыток - правда так и кластеры могут распаться, если старым способом клеить
-                // а если по новому клеить - типо по близости, то все норм м.б.
-                return clusters;
+                return null;
             }, null);
+
+           /* Map<Double, List<LabeledVector>> clusters = dataset.compute((data, env) -> {
+                mapping.put((double)(env.partition() + 1), new HashSet<>());
+                mapping.forEach((k,v) -> System.out.println(k));
+
+
+                Map<LabeledVector, VectorStatus> visitedPoints = new HashMap<>();
+                double clsLb = env.partition() * MAX_AMOUNT_OF_CLUSTERS;
+
+                Map<Double, List<LabeledVector>> locClusters = new HashMap<>(); // class label and list of class members
+
+                for (int i = 0; i < data.rowSize(); i++) {
+                    LabeledVector pnt = data.getRow(i);
+
+                    if (!visitedPoints.containsKey(pnt)) {
+                        List<LabeledVector> neighbours = getNeighbors(pnt, data); // TODO: could be indexed by local KD-Tree
+
+                        if (neighbours.size() > minimumNumOfClusterMembers) {
+                            clsLb += 1;
+                            locClusters.put(clsLb, new ArrayList<>());
+                            expandCluster(locClusters.get(clsLb), pnt, neighbours, data, visitedPoints);
+                        }
+                        else
+                            visitedPoints.put(pnt, VectorStatus.NOISE);
+                    }
+                }
+                return locClusters;
+            }, (a, b) -> {
+                if (a == null)
+                    return b == null ? new HashMap<>() : b;
+                if (b == null)
+                    return a;
+                a.putAll(b); // due to unqie keys in local DBSCAN clusterization
+                return a;
+            });
+*/
+            System.out.println("Result");
+            mapping.forEach((k, v) -> System.out.println(k));
+            locClusters.forEach(
+                (k, v) -> {
+
+                    try {
+                        Thread.sleep(1000);
+                    }
+                    catch (InterruptedException e1) {
+                        e1.printStackTrace();
+                    }
+                    System.out.println("Cluster: " + k + " size " + v.size());
+                    v.forEach(e -> {
+                        System.out.println("Class" + e.label());
+                        // System.out.print("Guid" + e.features().guid());
+
+                        Tracer.showAscii(e.features());
+                    });
+                }
+            );
+
+            //Set<Double> clsLbls = clusters.keySet();
+
+            // join clusters and build global-local cluster mappings - куча попарных проб, где-то будет иметь смысл "прыгать" и останаливаться
+            // mark clusters (add this field to LabeledPoint) in local partitions
+            // build idea of prediction method with significant number of core points or edge points
+
+            //reduce amount of points in each cluster (drop граница или внутренности?) или просто проредить точки сгущения?
+            // это может быть параметром approximate coeeficient при коээфициенте равном 1 - все точки перемещаем, чтобы склеить кластера
+            // а может быть можно переместить упакованную информацию о кластерах и ее склеить - это граница в евклидовом смысле
+            // можно рандомно, монте-карлово брать точки из попарных кластеров, чтобы проверить гипотезу о склейке или жестко упаковать инфу о точках в какой-то binary format
+            // нужна процедура внутри каждой партиции - поиск опорных точек в каждом кластере, просто рандомная подвыборка для перемешения дальше не больше k экземпляров, например
+            // причем желательно не нарушать основное свойство кластера из вики
+
+            // т.е. входной параметр - не более k кандидатов как в ANN число кластеров, если k = 0 или <0 то берем всех кандататов и тащим через reduce
+            // есть опасность, что они все упададут в какие-то точки згущения - можно после рандомной генерации проверять, что не соседи *10 попыток - правда так и кластеры могут распаться, если старым способом клеить
+            // а если по новому клеить - типо по близости, то все норм м.б.
 
         }
         catch (Exception e) {
@@ -184,14 +231,14 @@ public class DBSCANTrainer extends SingleLabelDatasetTrainer<DBSCANModel> {
 
         List<LabeledVector> neighborsCp = new ArrayList<>(neighbors);
 
-        for (int i = 0; i < neighbors.size(); i++) {
+        for (int i = 0; i < neighborsCp.size(); i++) {
             LabeledVector curr = neighbors.get(i);
             VectorStatus status = visitedPoints.get(curr);
 
             if (status == null) {
-                List<LabeledVector> currentNeighbors = getNeighbors(curr, points);
-                if (currentNeighbors.size() >= minimumNumOfClusterMembers)
-                    neighborsCp = merge(neighborsCp, currentNeighbors);
+                List<LabeledVector> currNeighbors = getNeighbors(curr, points);
+                if (currNeighbors.size() >= minimumNumOfClusterMembers)
+                    neighborsCp = merge(neighborsCp, currNeighbors);
             }
             if (status != VectorStatus.PART_OF_CLUSTER) {
                 visitedPoints.put(curr, VectorStatus.PART_OF_CLUSTER);
@@ -210,6 +257,7 @@ public class DBSCANTrainer extends SingleLabelDatasetTrainer<DBSCANModel> {
         return one;
     }
 
+    // TODO: cache all calculated distances as a parameter but it requires O(n2) memory
     private List<LabeledVector> getNeighbors(LabeledVector point, LabeledVectorSet<Double, LabeledVector> vectorSet) {
         List<LabeledVector> neighbors = new ArrayList<>();
 

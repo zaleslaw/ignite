@@ -151,7 +151,8 @@ public class ANNClassificationExample {
      * @return The changed vector data.
      */
     private static double[] mutate(double[] datum, int k) {
-        for (int i = 0; i < datum.length; i++) datum[i] += k / 100000;
+        for (int i = 1; i < datum.length; i++)
+            datum[i] += (double)k / 100000;
         return datum;
     }
 
