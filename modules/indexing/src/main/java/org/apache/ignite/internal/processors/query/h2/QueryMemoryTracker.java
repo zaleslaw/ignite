@@ -16,7 +16,6 @@
 
 package org.apache.ignite.internal.processors.query.h2;
 
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import org.apache.ignite.internal.processors.cache.query.IgniteQueryErrorCode;
 import org.apache.ignite.internal.processors.query.IgniteSQLException;
 import org.apache.ignite.internal.util.typedef.internal.S;
@@ -27,10 +26,6 @@ import org.apache.ignite.internal.util.typedef.internal.S;
  * Track query memory usage and throws an exception if query tries to allocate memory over limit.
  */
 public class QueryMemoryTracker extends H2MemoryTracker implements AutoCloseable {
-    /** Closed flag updater. */
-    private static final AtomicReferenceFieldUpdater<QueryMemoryTracker, Boolean> CLOSED_UPD =
-        AtomicReferenceFieldUpdater.newUpdater(QueryMemoryTracker.class, Boolean.class, "closed");
-
     /** Parent tracker. */
     private final H2MemoryTracker parent;
 
@@ -41,13 +36,13 @@ public class QueryMemoryTracker extends H2MemoryTracker implements AutoCloseable
     private final long blockSize;
 
     /** Memory reserved on parent. */
-    private volatile long reservedFromParent;
+    private long reservedFromParent;
 
     /** Memory reserved by query. */
-    private volatile long reserved;
+    private long reserved;
 
     /** Close flag to prevent tracker reuse. */
-    private volatile Boolean closed = Boolean.FALSE;
+    private Boolean closed = Boolean.FALSE;
 
     /**
      * Constructor.
@@ -71,29 +66,31 @@ public class QueryMemoryTracker extends H2MemoryTracker implements AutoCloseable
 
         assert size > 0;
 
-        long reserved0 = reserve0(size);
+        synchronized (this) {
+            if (closed)
+                throw new IllegalStateException("Memory tracker has been closed concurrently.");
 
-        if (parent != null && reserved0 > reservedFromParent) {
-            // If single block size is too small.
-            long blockSize = Math.max(reserved0 - reservedFromParent, this.blockSize);
-            // If we are too close to limit.
-            blockSize = Math.min(blockSize, maxMem - reservedFromParent);
+            long reserved0 = reserve0(size);
 
-            try {
-                parent.reserve(blockSize);
+            if (parent != null && reserved0 > reservedFromParent) {
+                try {
+                    // If single block size is too small.
+                    long blockSize = Math.max(reserved0 - reservedFromParent, this.blockSize);
+                    // If we are too close to limit.
+                    blockSize = Math.min(blockSize, maxMem - reservedFromParent);
 
-                reservedFromParent += blockSize;
-            }
-            catch (Throwable e) {
-                // Fallback if failed to reserve.
-                release0(size);
+                    parent.reserve(blockSize);
 
-                throw e;
+                    reservedFromParent += blockSize;
+                }
+                catch (Throwable e) {
+                    // Fallback if failed to reserve.
+                    release0(size);
+
+                    throw e;
+                }
             }
         }
-
-        if (closed)
-            throw new IllegalStateException("Memory tracker has been closed concurrently.");
     }
 
     /** {@inheritDoc} */
@@ -103,12 +100,14 @@ public class QueryMemoryTracker extends H2MemoryTracker implements AutoCloseable
 
         assert size > 0;
 
-        long reserved = release0(size);
+        synchronized (this) {
+            if (closed)
+                throw new IllegalStateException("Memory tracker has been closed concurrently.");
 
-        assert reserved >= 0;
+            long reserved = release0(size);
 
-        if (closed)
-            throw new IllegalStateException("Memory tracker has been closed concurrently.");
+            assert reserved >= 0;
+        }
     }
 
     /**
@@ -153,7 +152,12 @@ public class QueryMemoryTracker extends H2MemoryTracker implements AutoCloseable
     @Override public void close() {
         // It is not expected to be called concurrently with reserve\release.
         // But query can be cancelled concurrently on query finish.
-        if (CLOSED_UPD.compareAndSet(this, Boolean.FALSE, Boolean.TRUE)) {
+        synchronized (this) {
+            if (closed)
+                return;
+
+            closed = true;
+
             release0(reserved);
 
             if (parent != null)
