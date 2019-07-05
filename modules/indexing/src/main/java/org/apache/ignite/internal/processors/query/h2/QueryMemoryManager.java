@@ -100,12 +100,7 @@ public class QueryMemoryManager extends H2MemoryTracker {
         this.globalQuota = globalQuota;
         this.dfltSqlQryMemoryLimit = dfltMemLimit;
 
-        this.reserveOp = new ReservationOp(globalQuota) {
-            @Override protected void onOverflow() {
-                throw new IgniteSQLException("SQL query run out of memory: Global quota exceeded.",
-                    IgniteQueryErrorCode.QUERY_OUT_OF_MEMORY);
-            }
-        };
+        this.reserveOp = new ReservationOp(globalQuota);
 
         this.log = ctx.log(QueryMemoryManager.class);
     }
@@ -186,7 +181,7 @@ public class QueryMemoryManager extends H2MemoryTracker {
     }
 
     /** */
-    abstract static class ReservationOp implements LongBinaryOperator {
+    private static class ReservationOp implements LongBinaryOperator {
         /** Operation result high bound.*/
         private final long limit;
 
@@ -203,12 +198,10 @@ public class QueryMemoryManager extends H2MemoryTracker {
             long res = prev + x;
 
             if (res > limit)
-                onOverflow();
+                throw new IgniteSQLException("SQL query run out of memory: Global quota exceeded.",
+                    IgniteQueryErrorCode.QUERY_OUT_OF_MEMORY);
 
             return res;
         }
-
-        /** Overflow callback. */
-        protected abstract void onOverflow();
     }
 }
