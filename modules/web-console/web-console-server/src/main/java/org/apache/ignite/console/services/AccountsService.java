@@ -24,6 +24,7 @@ import org.apache.ignite.console.config.SignUpConfiguration;
 import org.apache.ignite.console.dto.Account;
 import org.apache.ignite.console.event.Event;
 import org.apache.ignite.console.event.EventPublisher;
+import org.apache.ignite.console.messages.WebConsoleMessageSource;
 import org.apache.ignite.console.repositories.AccountsRepository;
 import org.apache.ignite.console.tx.TransactionManager;
 import org.apache.ignite.console.web.model.ChangeUserRequest;
@@ -31,6 +32,8 @@ import org.apache.ignite.console.web.model.SignUpRequest;
 import org.apache.ignite.console.web.security.MissingConfirmRegistrationException;
 import org.apache.ignite.console.web.socket.WebSocketsManager;
 import org.apache.ignite.internal.util.typedef.F;
+import org.apache.ignite.internal.util.typedef.T2;
+import org.springframework.context.support.MessageSourceAccessor;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.core.userdetails.UserDetailsChecker;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -67,6 +70,9 @@ public class AccountsService implements UserDetailsService {
 
     /** User details getChecker. */
     protected UserDetailsChecker userDetailsChecker;
+
+    /** Messages acessor. */
+    protected final MessageSourceAccessor messages = WebConsoleMessageSource.getAccessor();
 
     /** Flag if sign up disabled and new accounts can be created only by administrator. */
     private boolean disableSignup;
@@ -145,7 +151,7 @@ public class AccountsService implements UserDetailsService {
             Account acc0 = create(params);
 
             if (disableSignup && !acc0.isAdmin())
-                throw new AuthenticationServiceException("Sign-up is not allowed. Ask your administrator to create account for you.");
+                throw new AuthenticationServiceException(messages.getMessage("err.sign-up-not-allowed"));
 
             return acc0;
         });
@@ -153,7 +159,7 @@ public class AccountsService implements UserDetailsService {
         if (activationEnabled) {
             evtPublisher.publish(new Event<>(RESET_ACTIVATION_TOKEN, acc));
 
-            throw new MissingConfirmRegistrationException("Confirm your email", acc.getEmail());
+            throw new MissingConfirmRegistrationException(messages.getMessage("err.confirm-email"), acc.getEmail());
         }
 
         evtPublisher.publish(new Event<>(ACCOUNT_CREATE, acc));
@@ -217,13 +223,13 @@ public class AccountsService implements UserDetailsService {
      */
     public void resetActivationToken(String email) {
         if (!activationEnabled)
-            throw new IllegalAccessError("Activation was not enabled!");
+            throw new IllegalAccessError(messages.getMessage("err.activation-not-enabled"));
 
         Account acc = txMgr.doInTransaction(() -> {
             Account acc0 = accountsRepo.getByEmail(email);
 
             if (MILLIS.between(acc0.getActivationSentAt(), LocalDateTime.now()) >= activationSndTimeout)
-                throw new IllegalAccessError("Too many activation attempts");
+                throw new IllegalAccessError(messages.getMessage("err.too-many-activation-attempts"));
 
             acc0.resetActivationToken();
 
@@ -242,22 +248,23 @@ public class AccountsService implements UserDetailsService {
      * @param changes Changes to apply to user.
      */
     public Account save(UUID accId, ChangeUserRequest changes) {
-        Account acc = txMgr.doInTransaction(() -> {
-            Account acc0 = accountsRepo.getById(accId);
+        T2<Account, String> res = txMgr.doInTransaction(() -> {
+            Account acc = accountsRepo.getById(accId);
 
-            acc0.update(changes);
+            acc.update(changes);
 
             String pwd = changes.getPassword();
 
             if (!F.isEmpty(pwd))
-                acc0.setPassword(encoder.encode(pwd));
+                acc.setPassword(encoder.encode(pwd));
 
-            accountsRepo.save(acc0);
-            
-            return acc0;
+            Account oldAcc = accountsRepo.save(acc);
+
+            return new T2<>(acc, oldAcc.getToken());
         });
 
-        String oldTok = acc.getToken();
+        Account acc = res.get1();
+        String oldTok = res.get2();
 
         if (!oldTok.equals(acc.getToken()))
             wsm.revokeToken(acc, oldTok);
@@ -296,7 +303,7 @@ public class AccountsService implements UserDetailsService {
             Account acc = accountsRepo.getByEmail(email);
 
             if (!resetPwdTok.equals(acc.getResetPasswordToken()))
-                throw new IllegalStateException("Failed to find account with this token! Please check link from email.");
+                throw new IllegalStateException(messages.getMessage("err.account-not-found-by-token"));
 
             userDetailsChecker.check(acc);
 

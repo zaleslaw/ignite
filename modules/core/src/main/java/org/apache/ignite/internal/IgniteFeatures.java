@@ -65,7 +65,10 @@ public enum IgniteFeatures {
     TX_TRACKING_UPDATE_COUNTER(12),
 
     /** Support new security processor */
-    IGNITE_SECURITY_PROCESSOR(13);
+    IGNITE_SECURITY_PROCESSOR(13),
+
+    /** Replacing TcpDiscoveryNode field with nodeId field in discovery messages. */
+    TCP_DISCOVERY_MESSAGE_NODE_COMPACT_REPRESENTATION(14);
 
     /**
      * Unique feature identifier.
@@ -98,8 +101,8 @@ public enum IgniteFeatures {
         if (ctx != null) {
             RollingUpgradeStatus status = ctx.rollingUpgrade().getStatus();
 
-            if (status.isEnabled() && !status.isForcedModeEnabled())
-                return status.getSupportedFeatures().contains(feature);
+            if (status.enabled() && !status.forcedModeEnabled())
+                return status.supportedFeatures().contains(feature);
         }
 
         return nodeSupports(clusterNode.attribute(ATTR_IGNITE_FEATURES), feature);
@@ -141,8 +144,8 @@ public enum IgniteFeatures {
         if (ctx != null && nodes.iterator().hasNext()) {
             RollingUpgradeStatus status = ctx.rollingUpgrade().getStatus();
 
-            if (status.isEnabled() && !status.isForcedModeEnabled())
-                return status.getSupportedFeatures().contains(feature);
+            if (status.enabled() && !status.forcedModeEnabled())
+                return status.supportedFeatures().contains(feature);
         }
 
         for (ClusterNode next : nodes) {

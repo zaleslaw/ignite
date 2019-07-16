@@ -160,6 +160,7 @@ import org.apache.ignite.internal.util.GridMultiCollectionWrapper;
 import org.apache.ignite.internal.util.GridReadOnlyArrayView;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.internal.util.StripedExecutor;
+import org.apache.ignite.internal.util.TimeBag;
 import org.apache.ignite.internal.util.future.CountDownFuture;
 import org.apache.ignite.internal.util.future.GridCompoundFuture;
 import org.apache.ignite.internal.util.future.GridFutureAdapter;
@@ -424,7 +425,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         lockWaitTime = persistenceCfg.getLockWaitTime();
 
         persStoreMetrics = new DataStorageMetricsImpl(
-            ctx.metric().registry(),
+            ctx.metric(),
             persistenceCfg.isMetricsEnabled(),
             persistenceCfg.getMetricsRateTimeInterval(),
             persistenceCfg.getMetricsSubIntervalCount()
@@ -2036,7 +2037,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
     }
 
     /** {@inheritDoc} */
-    @Override public void startMemoryRestore(GridKernalContext kctx) throws IgniteCheckedException {
+    @Override public void startMemoryRestore(GridKernalContext kctx, TimeBag startTimer) throws IgniteCheckedException {
         if (kctx.clientNode())
             return;
 
@@ -2045,6 +2046,8 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         try {
             // Preform early regions startup before restoring state.
             initAndStartRegions(kctx.config().getDataStorageConfiguration());
+
+            startTimer.finishGlobalStage("Init and start regions");
 
             // Restore binary memory for all not WAL disabled cache groups.
             restoreBinaryMemory(
@@ -2057,6 +2060,8 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
                 dumpPartitionsInfo(cctx, log);
             }
+
+            startTimer.finishGlobalStage("Restore binary memory");
 
             CheckpointStatus status = readCheckpointStatus();
 
@@ -2072,6 +2077,12 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
                 dumpPartitionsInfo(cctx, log);
             }
+
+            startTimer.finishGlobalStage("Restore logical state");
+
+            // Should flush all data in buffers before read last WAL pointer.
+            // Iterator read records only from files.
+            cctx.wal().flush(null, true);
 
             // We must return null for NULL_PTR record, because FileWriteAheadLogManager.resumeLogging
             // can't write header without that condition.
@@ -2273,7 +2284,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         try {
             while (it.hasNextX()) {
                 if (applyError.get() != null)
-                    throw applyError.get();
+                    break;
 
                 WALRecord rec = restoreBinaryState.next();
 
@@ -2393,9 +2404,9 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         }
         finally {
             it.close();
-        }
 
-        awaitApplyComplete(exec, applyError);
+            awaitApplyComplete(exec, applyError);
+        }
 
         if (!finalizeState)
             return null;
@@ -2450,21 +2461,17 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         StripedExecutor exec,
         AtomicReference<IgniteCheckedException> applyError
     ) throws IgniteCheckedException {
-        if (applyError.get() != null)
-            throw applyError.get(); // Fail-fast check.
-        else {
-            try {
-                // Await completion apply tasks in all stripes.
-                exec.awaitComplete();
-            }
-            catch (InterruptedException e) {
-                throw new IgniteInterruptedException(e);
-            }
-
-            // Checking error after all task applied.
-            if (applyError.get() != null)
-                throw applyError.get();
+        try {
+            // Await completion apply tasks in all stripes.
+            exec.awaitComplete();
         }
+        catch (InterruptedException e) {
+            throw new IgniteInterruptedException(e);
+        }
+
+        // Checking error after all task applied.
+        if (applyError.get() != null)
+            throw applyError.get();
     }
 
     /**
@@ -3773,7 +3780,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
             long nextNanos = System.nanoTime() + U.millisToNanos(delayFromNow);
 
-            if (sched.nextCpNanos <= nextNanos)
+            if (sched.nextCpNanos - nextNanos <= 0)
                 return new CheckpointProgressSnapshot(sched);
 
             CheckpointProgressSnapshot ret;
@@ -4912,6 +4919,9 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                 if (pagesToRetry.isEmpty())
                     doneFut.onDone((Void)null);
                 else {
+                    LT.warn(log, pagesToRetry.size() + " checkpoint pages were not written yet due to unsuccessful " +
+                        "page write lock acquisition and will be retried");
+
                     if (retryWriteExecutor == null) {
                         while (!pagesToRetry.isEmpty())
                             pagesToRetry = writePages(pagesToRetry);

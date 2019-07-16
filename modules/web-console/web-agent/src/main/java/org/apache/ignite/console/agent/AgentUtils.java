@@ -27,9 +27,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
-import org.apache.ignite.console.websocket.WebSocketEvent;
+import org.apache.ignite.console.websocket.WebSocketResponse;
 import org.apache.ignite.internal.util.typedef.F;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.log4j.Logger;
@@ -155,7 +158,7 @@ public class AgentUtils {
         String trustStorePwd,
         List<String> ciphers
     ) {
-        SslContextFactory sslCtxFactory = new SslContextFactory();
+        SslContextFactory sslCtxFactory = new SslContextFactory.Client();
 
         if (!F.isEmpty(keyStore)) {
             sslCtxFactory.setKeyStorePath(keyStore);
@@ -295,10 +298,21 @@ public class AgentUtils {
      *
      * @param ses Websocket session.
      * @param evt Event.
+     * @param timeout the maximum time to wait
+     * @param unit the time unit of the timeout argument
      * @throws Exception If failed to send event.
      */
-    public static void send(Session ses, WebSocketEvent evt) throws Exception {
-        ses.getRemote().sendStringByFuture(toJson(evt)).get();
+    public static void send(Session ses, WebSocketResponse evt, long timeout, TimeUnit unit) throws Exception {
+        Future<Void> fut = ses.getRemote().sendStringByFuture(toJson(evt));
+
+        try {
+            fut.get(timeout, unit);
+        }
+        catch (TimeoutException e) {
+            fut.cancel(true);
+
+            throw e;
+        }
     }
 
     /**

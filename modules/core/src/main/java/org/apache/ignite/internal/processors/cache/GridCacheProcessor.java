@@ -16,10 +16,6 @@
 
 package org.apache.ignite.internal.processors.cache;
 
-import javax.cache.configuration.FactoryBuilder;
-import javax.cache.expiry.EternalExpiryPolicy;
-import javax.cache.expiry.ExpiryPolicy;
-import javax.management.MBeanServer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -41,6 +37,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.cache.configuration.FactoryBuilder;
+import javax.cache.expiry.EternalExpiryPolicy;
+import javax.cache.expiry.ExpiryPolicy;
+import javax.management.MBeanServer;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteCompute;
 import org.apache.ignite.IgniteException;
@@ -61,6 +61,7 @@ import org.apache.ignite.configuration.DataPageEvictionMode;
 import org.apache.ignite.configuration.DataRegionConfiguration;
 import org.apache.ignite.configuration.DataStorageConfiguration;
 import org.apache.ignite.configuration.DeploymentMode;
+import org.apache.ignite.configuration.DiskPageCompression;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.configuration.MemoryConfiguration;
 import org.apache.ignite.configuration.NearCacheConfiguration;
@@ -690,19 +691,26 @@ public class GridCacheProcessor extends GridProcessorAdapter {
         }
 
         if (cc.isEncryptionEnabled() && !ctx.clientNode()) {
+            StringBuilder cacheSpec = new StringBuilder("[cacheName=").append(cc.getName())
+                .append(", groupName=").append(cc.getGroupName())
+                .append(", cacheType=").append(cacheType)
+                .append(']');
+
             if (!CU.isPersistentCache(cc, c.getDataStorageConfiguration())) {
                 throw new IgniteCheckedException("Using encryption is not allowed" +
-                    " for not persistent cache  [cacheName=" + cc.getName() + ", groupName=" + cc.getGroupName() +
-                    ", cacheType=" + cacheType + "]");
+                    " for not persistent cache " + cacheSpec.toString());
             }
 
             EncryptionSpi encSpi = c.getEncryptionSpi();
 
             if (encSpi == null) {
                 throw new IgniteCheckedException("EncryptionSpi should be configured to use encrypted cache " +
-                    "[cacheName=" + cc.getName() + ", groupName=" + cc.getGroupName() +
-                    ", cacheType=" + cacheType + "]");
+                    cacheSpec.toString());
             }
+
+            if (cc.getDiskPageCompression() != DiskPageCompression.DISABLED)
+                throw new IgniteCheckedException("Encryption cannot be used with disk page compression " +
+                    cacheSpec.toString());
         }
 
         Collection<QueryEntity> ents = cc.getQueryEntities();
@@ -1073,6 +1081,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
     }
 
     /**
+     * @param rmtNode Remote node to check.
      * @return Data storage configuration
      */
     private DataStorageConfiguration extractDataStorage(ClusterNode rmtNode) {
@@ -2440,23 +2449,31 @@ public class GridCacheProcessor extends GridProcessorAdapter {
 
         boolean affNode = checkForAffinityNode(desc, reqNearCfg, ccfg);
 
-        CacheGroupContext grp = getOrCreateCacheGroupContext(desc, exchTopVer, cacheObjCtx, affNode, startCfg.getGroupName(), false);
+        ctx.cache().context().database().checkpointReadLock();
 
-        GridCacheContext cacheCtx = createCacheContext(ccfg,
-            grp,
-            null,
-            desc,
-            exchTopVer,
-            cacheObjCtx,
-            affNode,
-            true,
-            disabledAfterStart,
-            false
-        );
+        try {
+            CacheGroupContext grp = getOrCreateCacheGroupContext(
+                desc, exchTopVer, cacheObjCtx, affNode, startCfg.getGroupName(), false);
 
-        initCacheContext(cacheCtx, ccfg);
+            GridCacheContext cacheCtx = createCacheContext(ccfg,
+                grp,
+                null,
+                desc,
+                exchTopVer,
+                cacheObjCtx,
+                affNode,
+                true,
+                disabledAfterStart,
+                false
+            );
 
-        return cacheCtx;
+            initCacheContext(cacheCtx, ccfg);
+
+            return cacheCtx;
+        }
+        finally {
+            ctx.cache().context().database().checkpointReadUnlock();
+        }
     }
 
     /**
@@ -2719,28 +2736,38 @@ public class GridCacheProcessor extends GridProcessorAdapter {
 
         preparePageStore(desc, true);
 
-        CacheGroupContext grp = getOrCreateCacheGroupContext(
-            desc,
-            AffinityTopologyVersion.NONE,
-            cacheObjCtx,
-            true,
-            cfg.getGroupName(),
-            true
-        );
+        CacheGroupContext grpCtx;
+        GridCacheContext cacheCtx;
 
-        GridCacheContext cacheCtx = createCacheContext(cfg,
-            grp,
-            null,
-            desc,
-            AffinityTopologyVersion.NONE,
-            cacheObjCtx,
-            true,
-            true,
-            false,
-            true
-        );
+        ctx.cache().context().database().checkpointReadLock();
 
-        initCacheContext(cacheCtx, cfg);
+        try {
+            grpCtx = getOrCreateCacheGroupContext(
+                desc,
+                AffinityTopologyVersion.NONE,
+                cacheObjCtx,
+                true,
+                cfg.getGroupName(),
+                true
+            );
+
+            cacheCtx = createCacheContext(cfg,
+                grpCtx,
+                null,
+                desc,
+                AffinityTopologyVersion.NONE,
+                cacheObjCtx,
+                true,
+                true,
+                false,
+                true
+            );
+
+            initCacheContext(cacheCtx, cfg);
+        }
+        finally {
+            ctx.cache().context().database().checkpointReadUnlock();
+        }
 
         cacheCtx.onStarted();
 
@@ -2749,7 +2776,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
         if (dataRegion == null && ctx.config().getDataStorageConfiguration() != null)
             dataRegion = ctx.config().getDataStorageConfiguration().getDefaultDataRegionConfiguration().getName();
 
-        grp.onCacheStarted(cacheCtx);
+        grpCtx.onCacheStarted(cacheCtx);
 
         ctx.query().onCacheStart(new GridCacheContextInfo(cacheCtx, false),
             desc.schema() != null ? desc.schema() : new QuerySchema(), desc.sql());
@@ -2936,7 +2963,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
                 GridCacheAdapter<?, ?> cache;
 
                 if (proxy == null && (cache = caches.get(cacheName)) != null) {
-                    proxy = new IgniteCacheProxyImpl(cache.context(), cache, false);
+                    proxy = new IgniteCacheProxyImpl(cache.context(), cache);
 
                     IgniteCacheProxyImpl<?, ?> oldProxy = jCacheProxies.putIfAbsent(cacheName, proxy);
 
@@ -3026,7 +3053,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
 
             if (cacheCtx.startTopologyVersion().equals(startTopVer)) {
                 if (!jCacheProxies.containsKey(cacheCtx.name())) {
-                    IgniteCacheProxyImpl<?, ?> newProxy = new IgniteCacheProxyImpl(cache.context(), cache, false);
+                    IgniteCacheProxyImpl<?, ?> newProxy = new IgniteCacheProxyImpl(cache.context(), cache);
 
                     if (!cache.active())
                         newProxy.suspend();
@@ -3080,7 +3107,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
 
             assert cache != null : cctx.name();
 
-            jCacheProxies.put(cctx.name(), new IgniteCacheProxyImpl(cache.context(), cache, false));
+            jCacheProxies.put(cctx.name(), new IgniteCacheProxyImpl(cache.context(), cache));
 
             completeProxyInitialize(cctx.name());
         }
@@ -3562,7 +3589,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
             if (errorMsg.length() > 0) {
                 String msg = errorMsg.toString();
 
-                return new IgniteNodeValidationResult(node.id(), msg, msg);
+                return new IgniteNodeValidationResult(node.id(), msg);
             }
         }
 
@@ -4752,7 +4779,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
             String msg = "Joining node during caches restart is not allowed [joiningNodeId=" + node.id() +
                 ", restartingCaches=" + new HashSet<>(cachesInfo.restartingCaches()) + ']';
 
-            return new IgniteNodeValidationResult(node.id(), msg, msg);
+            return new IgniteNodeValidationResult(node.id(), msg);
         }
 
         return null;
@@ -5080,7 +5107,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
                 GridCacheAdapter<?, ?> cacheAdapter = caches.get(name);
 
                 if (cacheAdapter != null) {
-                    proxy = new IgniteCacheProxyImpl(cacheAdapter.context(), cacheAdapter, false);
+                    proxy = new IgniteCacheProxyImpl(cacheAdapter.context(), cacheAdapter);
 
                     IgniteCacheProxyImpl<?, ?> prev = addjCacheProxy(name, (IgniteCacheProxyImpl<?, ?>)proxy);
 
@@ -5339,7 +5366,7 @@ public class GridCacheProcessor extends GridProcessorAdapter {
             GridCacheAdapter<?, ?> cacheAdapter = caches.get(name);
 
             if (cacheAdapter != null) {
-                cache = new IgniteCacheProxyImpl(cacheAdapter.context(), cacheAdapter, false);
+                cache = new IgniteCacheProxyImpl(cacheAdapter.context(), cacheAdapter);
 
                 IgniteCacheProxyImpl<?, ?> prev = addjCacheProxy(name, (IgniteCacheProxyImpl<?, ?>)cache);
 
