@@ -17,28 +17,47 @@
 
 package org.apache.ignite.ml.clustering.kmeans;
 
+import java.io.*;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.environment.deploy.DeployableObject;
+import org.apache.ignite.ml.inference.exchange.JSONModel;
+import org.apache.ignite.ml.inference.exchange.MLReadable;
+import org.apache.ignite.ml.inference.exchange.MLWritable;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.Tracer;
-import org.apache.ignite.ml.math.distances.DistanceMeasure;
+import org.apache.ignite.ml.math.distances.*;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
+import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 import org.apache.ignite.ml.util.ModelTrace;
+import org.dmg.pmml.*;
+import org.dmg.pmml.clustering.Cluster;
+import org.dmg.pmml.clustering.ClusteringModel;
+import org.jpmml.model.PMMLUtil;
+import org.xml.sax.SAXException;
+
+import javax.xml.bind.JAXBException;
 
 /**
  * This class encapsulates result of clusterization by KMeans algorithm.
  */
 public final class KMeansModel implements ClusterizationModel<Vector, Integer>, Exportable<KMeansModelFormat>,
-    DeployableObject {
+        MLWritable, MLReadable, DeployableObject {
     /** Centers of clusters. */
-    private final Vector[] centers;
+    private Vector[] centers;
 
     /** Distance measure. */
-    private final DistanceMeasure distanceMeasure;
+    private DistanceMeasure distanceMeasure = new EuclideanDistance();
 
     /**
      * Construct KMeans model with given centers and distanceMeasure measure.
@@ -51,18 +70,45 @@ public final class KMeansModel implements ClusterizationModel<Vector, Integer>, 
         this.distanceMeasure = distanceMeasure;
     }
 
+    /** {@inheritDoc} */
+    public KMeansModel() {
+
+    }
+
     /** Distance measure. */
     public DistanceMeasure distanceMeasure() {
         return distanceMeasure;
     }
 
     /** {@inheritDoc} */
-    @Override public int getAmountOfClusters() {
+    @Override public int amountOfClusters() {
         return centers.length;
     }
 
+    /**
+     * Set up the centroids.
+     *
+     * @param centers The parameter value.
+     * @return Model with new centers parameter value.
+     */
+    public KMeansModel withCentroids(Vector[] centers) {
+        this.centers = centers;
+        return this;
+    }
+
+    /**
+     * Set up the distance measure.
+     *
+     * @param distanceMeasure The parameter value.
+     * @return Model with new distance measure parameter value.
+     */
+    public KMeansModel withDistanceMeasure(DistanceMeasure distanceMeasure) {
+        this.distanceMeasure = distanceMeasure;
+        return this;
+    }
+
     /** {@inheritDoc} */
-    @Override public Vector[] getCenters() {
+    @Override public Vector[] centers() {
         return Arrays.copyOf(centers, centers.length);
     }
 
@@ -132,5 +178,195 @@ public final class KMeansModel implements ClusterizationModel<Vector, Integer>, 
     /** {@inheritDoc} */
     @Override public List<Object> getDependencies() {
         return Collections.singletonList(distanceMeasure);
+    }
+
+    /** {@inheritDoc} */
+    @Override public KMeansModel load(Path path, ModelFormat mdlFormat) {
+        if (mdlFormat == ModelFormat.PMML) {
+            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+                PMML pmml = PMMLUtil.unmarshal(is);
+
+                ClusteringModel clusteringModel = (ClusteringModel) pmml.getModels().get(0);
+
+                List<Cluster> clusters = clusteringModel.getClusters();
+
+                Vector[] centroids = new DenseVector[clusters.size()];
+
+                for (int i = 0; i < clusters.size(); i++) {
+                    Cluster cluster = clusters.get(i);
+                    Integer centroidSize = cluster.getArray().getN();
+                    centroids[i] = new DenseVector(centroidSize);
+                    String[] elems = cluster.getArray().getValue().split(";");
+
+                    if(elems.length != centroidSize) {
+                        throw new PMMLModelParsingCentroidSizeException(); // TODO: write test and refactor hierarchy of exceptions
+                    } else {
+                        for (int j = 0; j < centroidSize; j++) {
+                            double coefficient = Double.parseDouble(elems[j]); // TODO: handle exceptions
+                            centroids[i].set(j, coefficient);
+                        }
+                    }
+                }
+
+                DistanceMeasure distanceMeasure;
+                Measure measure = clusteringModel.getComparisonMeasure().getMeasure();
+                if(measure instanceof SquaredEuclidean) {
+                    distanceMeasure = new EuclideanDistance();
+                } else if (measure instanceof Minkowski) {
+                    double p = ((Minkowski)measure).getPParameter();
+                    distanceMeasure = new MinkowskiDistance(p);
+                } else if (measure instanceof Chebychev) {
+                    distanceMeasure = new ChebyshevDistance();
+                } else {
+                    distanceMeasure = new EuclideanDistance(); // by default or TODO: throw exception
+                }
+                return new KMeansModel(centroids, distanceMeasure);
+            } catch (IOException | JAXBException | SAXException e) {
+                e.printStackTrace();
+            }
+            return null;
+        } else if (mdlFormat == ModelFormat.JSON) {
+            ObjectMapper mapper = new ObjectMapper().configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+
+            KMeansJSONExportModel exportModel;
+            try {
+                exportModel = mapper
+                        .readValue(new File(path.toAbsolutePath().toString()), KMeansJSONExportModel.class);
+
+                return exportModel.convert();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    // TODO: https://github.com/apache/spark/blob/master/mllib/src/main/scala/org/apache/spark/mllib/pmml/export/KMeansPMMLModelExport.scala
+    /** {@inheritDoc} */
+    @Override public void save(Path path, ModelFormat mdlFormat) {
+        if (mdlFormat == ModelFormat.PMML) {
+            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
+
+                ComparisonMeasure comparisonMeasure;
+
+                if(distanceMeasure instanceof EuclideanDistance) {
+                    comparisonMeasure = new ComparisonMeasure()
+                            .setKind(ComparisonMeasure.Kind.DISTANCE)
+                            .setMeasure(new SquaredEuclidean());
+                } else if (distanceMeasure instanceof MinkowskiDistance) {
+                    comparisonMeasure = new ComparisonMeasure()
+                            .setKind(ComparisonMeasure.Kind.DISTANCE)
+                            .setMeasure(new Minkowski(((MinkowskiDistance)distanceMeasure).p())); // TODO: add tests for that
+                } else if (distanceMeasure instanceof ChebyshevDistance) {
+                    comparisonMeasure = new ComparisonMeasure()
+                            .setKind(ComparisonMeasure.Kind.DISTANCE)
+                            .setMeasure(new Chebychev());
+                } else {
+                    // TODO: log default value or throw exception for uknown model distance format
+                    comparisonMeasure = new ComparisonMeasure()
+                            .setKind(ComparisonMeasure.Kind.DISTANCE)
+                            .setMeasure(new SquaredEuclidean());
+                }
+
+                ClusteringModel clusteringModel = new ClusteringModel()
+                        .setModelName("k-means")
+                        .setComparisonMeasure(comparisonMeasure)
+                        .setMiningFunction(MiningFunction.CLUSTERING)
+                        .setModelClass(ClusteringModel.ModelClass.CENTER_BASED)
+                        .setNumberOfClusters(centers.length);
+
+                for (int i = 0; i < centers.length; i++) {
+                    Vector centroid = centers[i];
+
+                    Cluster cluster = new Cluster();
+                    cluster.setName("cluster_" + i)
+                            .setArray(new org.dmg.pmml.Array()
+                                    .setType(Array.Type.REAL)
+                                    .setN(centroid.size())
+                                    .setValue(Arrays.stream(centroid.asArray())
+                                                    .mapToObj(String::valueOf)
+                                                    .collect(Collectors.joining(";"))));
+                    clusteringModel.addClusters(cluster);
+                }
+
+                Header header = new Header();
+                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
+                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
+                        .addModels(clusteringModel);
+
+                PMMLUtil.marshal(pmml, out);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        } else {
+            ObjectMapper mapper = new ObjectMapper();
+
+            try {
+                KMeansJSONExportModel exportModel = new KMeansJSONExportModel();
+                List<double[]> listOfCenters = new ArrayList<>();
+                for (int i = 0; i < centers.length; i++) {
+                    listOfCenters.add(centers[i].asArray());
+                }
+
+                exportModel.mdlCenters = listOfCenters;
+                exportModel.versionName = "2.9.0-SNAPSHOT";
+                exportModel.distanceMeasureName = distanceMeasure.getClass().getSimpleName();
+
+                if(distanceMeasure instanceof MinkowskiDistance) {
+                    exportModel.pNorm = ((MinkowskiDistance) distanceMeasure).p();
+                }
+
+                File file = new File(path.toAbsolutePath().toString());
+                mapper.writeValue(file, exportModel);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    private static class KMeansJSONExportModel extends JSONModel {
+        /** Centers of clusters. */
+        public List<double[]> mdlCenters;
+
+        /** Distance measure. */
+        public String distanceMeasureName;
+
+        /** p - norm for Minkowski distance only. */
+        public double pNorm = 0;
+
+        public KMeansModel convert() {
+            KMeansModel mdl = new KMeansModel();
+            Vector[] centers = new DenseVector[mdlCenters.size()];
+            for (int i = 0; i < mdlCenters.size(); i++) {
+                centers[i] = VectorUtils.of(mdlCenters.get(i));
+            }
+
+            DistanceMeasure distanceMeasure;
+
+            if(distanceMeasureName.equals(EuclideanDistance.class.getSimpleName())) {
+                distanceMeasure = new EuclideanDistance();
+            } else if (distanceMeasureName.equals(MinkowskiDistance.class.getSimpleName())) {
+                distanceMeasure = new MinkowskiDistance(pNorm); // TODO: add test for this
+            } else if (distanceMeasureName.equals(ChebyshevDistance.class.getSimpleName())) {
+                distanceMeasure = new ChebyshevDistance();
+            } else if (distanceMeasureName.equals(ManhattanDistance.class.getSimpleName())) {
+                distanceMeasure = new ManhattanDistance();
+            } else if (distanceMeasureName.equals(HammingDistance.class.getSimpleName())) {
+                distanceMeasure = new HammingDistance();
+            } else if(distanceMeasureName.equals(JaccardIndex.class.getSimpleName())) {
+                distanceMeasure = new JaccardIndex();
+            } else if(distanceMeasureName.equals(CosineSimilarity.class.getSimpleName())) {
+                distanceMeasure = new CosineSimilarity();
+            } else {
+                distanceMeasure = new EuclideanDistance();
+            }
+
+            mdl.withCentroids(centers);
+            mdl.withDistanceMeasure(distanceMeasure);
+            return mdl;
+        }
     }
 }

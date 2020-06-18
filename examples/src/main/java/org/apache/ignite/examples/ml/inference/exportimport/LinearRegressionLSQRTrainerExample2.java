@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.examples.ml.regression;
+package org.apache.ignite.examples.ml.inference.exportimport;
 
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;

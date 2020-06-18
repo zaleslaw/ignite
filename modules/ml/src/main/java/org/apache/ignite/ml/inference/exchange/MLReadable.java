@@ -6,5 +6,5 @@ import org.apache.ignite.ml.math.primitives.vector.Vector;
 import java.nio.file.Path;
 
 public interface MLReadable {
-    IgniteModel<Vector, Double> load(Path path, ModelFormat mdlFormat);
+    IgniteModel<Vector, ? extends Number> load(Path path, ModelFormat mdlFormat);
 }
