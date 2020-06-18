@@ -17,16 +17,35 @@
 
 package org.apache.ignite.ml.regressions.logistic;
 
+import java.io.*;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Objects;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.IgniteModel;
+import org.apache.ignite.ml.inference.exchange.JSONModel;
+import org.apache.ignite.ml.inference.exchange.MLReadable;
+import org.apache.ignite.ml.inference.exchange.MLWritable;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
+import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
+import org.dmg.pmml.*;
+import org.dmg.pmml.regression.NumericPredictor;
+import org.dmg.pmml.regression.RegressionModel;
+import org.dmg.pmml.regression.RegressionTable;
+import org.jpmml.model.PMMLUtil;
+import org.xml.sax.SAXException;
+
+import javax.xml.bind.JAXBException;
 
 /**
  * Logistic regression (logit model) is a generalized linear model used for binomial regression.
  */
-public final class LogisticRegressionModel implements IgniteModel<Vector, Double>, Exportable<LogisticRegressionModel> {
+public final class LogisticRegressionModel implements IgniteModel<Vector, Double>, Exportable<LogisticRegressionModel>, MLWritable, MLReadable {
     /** */
     private static final long serialVersionUID = -133984600091550776L;
 
@@ -41,6 +60,9 @@ public final class LogisticRegressionModel implements IgniteModel<Vector, Double
 
     /** Threshold to assign '1' label to the observation if raw value more than this threshold. */
     private double threshold = 0.5;
+
+    public LogisticRegressionModel() {
+    }
 
     /** */
     public LogisticRegressionModel(Vector weights, double intercept) {
@@ -201,4 +223,132 @@ public final class LogisticRegressionModel implements IgniteModel<Vector, Double
     @Override public String toString(boolean pretty) {
         return toString();
     }
+
+    @Override
+    public LogisticRegressionModel load(Path path, ModelFormat mdlFormat) {
+        if (mdlFormat == ModelFormat.PMML) {
+            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+                PMML pmml = PMMLUtil.unmarshal(is);
+
+                RegressionModel logRegMdl = (RegressionModel) pmml.getModels().get(0);
+
+                RegressionTable regTbl = logRegMdl.getRegressionTables().get(0);
+
+                Vector coefficients = new DenseVector(regTbl.getNumericPredictors().size());
+
+                for (int i = 0; i < regTbl.getNumericPredictors().size(); i++)
+                    coefficients.set(i, regTbl.getNumericPredictors().get(i).getCoefficient());
+
+                double interceptor = regTbl.getIntercept();
+
+                return new LogisticRegressionModel(coefficients, interceptor);
+            } catch (IOException | JAXBException | SAXException e) {
+                e.printStackTrace();
+            }
+            return null;
+        } else if (mdlFormat == ModelFormat.JSON) {
+            ObjectMapper mapper = new ObjectMapper();
+
+            LogisticRegressionJSONExportModel logisticRegressionJSONExportModel;
+            try {
+                logisticRegressionJSONExportModel = mapper
+                        .readValue(new File(path.toAbsolutePath().toString()), LogisticRegressionJSONExportModel.class);
+
+                return logisticRegressionJSONExportModel.convert();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void save(Path path, ModelFormat mdlFormat) {
+        if (mdlFormat == ModelFormat.PMML) {
+            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
+                RegressionTable regressionTable = new RegressionTable();
+                regressionTable.setIntercept(intercept);
+
+                for (int i = 0; i < weights.size(); i++) {
+                    regressionTable.addNumericPredictors(new NumericPredictor().setCoefficient(weights.get(i)));
+                }
+
+                RegressionModel regressionModel = new RegressionModel()
+                        .addRegressionTables(regressionTable);
+
+                Header header = new Header();
+                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
+                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
+                        .addModels(regressionModel);
+
+                PMMLUtil.marshal(pmml, out);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        } else {
+            ObjectMapper mapper = new ObjectMapper();
+
+            try {
+                LogisticRegressionJSONExportModel exportModel = new LogisticRegressionJSONExportModel();
+                exportModel.intercept = intercept;
+                exportModel.isKeepingRawLabels = isKeepingRawLabels;
+                exportModel.threshold = threshold;
+                exportModel.weights = weights.asArray();
+                exportModel.versionName = "2.9.0-SNAPSHOT";
+
+                File file = new File(path.toAbsolutePath().toString());
+                mapper.writeValue(file, exportModel);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    private static class LogisticRegressionJSONExportModel extends JSONModel {
+        /**
+         * Multiplier of the objects's vector required to make prediction.
+         */
+        public double[] weights;
+
+        /**
+         * Intercept of the linear regression model.
+         */
+        public double intercept;
+
+        /**
+         * Output label format. 0 and 1 for false value and raw sigmoid regression value otherwise.
+         */
+        public boolean isKeepingRawLabels;
+
+        /**
+         * Threshold to assign '1' label to the observation if raw value more than this threshold.
+         */
+        public double threshold = 0.5;
+
+        @Override
+        public String toString() {
+            return "LogisticRegressionJSONExportModel{" +
+                    "weights=" + Arrays.toString(weights) +
+                    ", intercept=" + intercept +
+                    ", isKeepingRawLabels=" + isKeepingRawLabels +
+                    ", threshold=" + threshold +
+                    '}';
+        }
+
+        public LogisticRegressionModel convert() {
+            LogisticRegressionModel logRegMdl = new LogisticRegressionModel();
+            logRegMdl.withWeights(VectorUtils.of(weights));
+            logRegMdl.withIntercept(intercept);
+            logRegMdl.withRawLabels(isKeepingRawLabels);
+            logRegMdl.withThreshold(threshold);
+
+            return logRegMdl;
+        }
+    }
 }
+
+
+
