@@ -74,7 +74,7 @@ public class DecisionTreeRegressionTrainerTest {
         DecisionTreeRegressionTrainer trainer = new DecisionTreeRegressionTrainer(1, 0)
             .withUsingIdx(useIdx == 1);
 
-        DecisionTreeNode treeNode = trainer.fit(data, parts, new DoubleArrayVectorizer<Integer>().labeled(1)).rootNode();
+        DecisionTreeNode treeNode = trainer.fit(data, parts, new DoubleArrayVectorizer<Integer>().labeled(1)).getRootNode();
 
         assertTrue(treeNode instanceof DecisionTreeConditionalNode);
 

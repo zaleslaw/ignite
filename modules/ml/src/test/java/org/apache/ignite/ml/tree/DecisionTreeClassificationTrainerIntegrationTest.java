@@ -74,7 +74,7 @@ public class DecisionTreeClassificationTrainerIntegrationTest extends GridCommon
 
         DecisionTreeModel tree = trainer.fit(ignite, data, new DoubleArrayVectorizer<Integer>().labeled(1));
 
-        DecisionTreeNode decisionTreeNode = tree.rootNode();
+        DecisionTreeNode decisionTreeNode = tree.getRootNode();
         assertTrue(decisionTreeNode instanceof DecisionTreeConditionalNode);
 
         DecisionTreeConditionalNode node = (DecisionTreeConditionalNode) decisionTreeNode;

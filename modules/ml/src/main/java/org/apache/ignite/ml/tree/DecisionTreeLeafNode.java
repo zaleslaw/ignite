@@ -17,21 +17,17 @@
 
 package org.apache.ignite.ml.tree;
 
-import org.apache.ignite.ml.IgniteModel;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
-
-import java.nio.file.Path;
 
 /**
  * Decision tree leaf node which contains value.
  */
-public final class DecisionTreeLeafNode implements DecisionTreeNode {
+public final class DecisionTreeLeafNode extends DecisionTreeNode {
     /** */
     private static final long serialVersionUID = -472145568088482206L;
 
     /** Value of the node. */
-    private final double val;
+    private double val;
 
     /**
      * Constructs a new decision tree leaf node.
@@ -40,6 +36,10 @@ public final class DecisionTreeLeafNode implements DecisionTreeNode {
      */
     public DecisionTreeLeafNode(double val) {
         this.val = val;
+    }
+
+    /** For jackson serialization needs. */
+    public DecisionTreeLeafNode() {
     }
 
     /** {@inheritDoc} */

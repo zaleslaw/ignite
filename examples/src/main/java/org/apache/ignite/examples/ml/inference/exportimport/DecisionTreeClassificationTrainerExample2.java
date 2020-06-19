@@ -91,24 +91,20 @@ public class DecisionTreeClassificationTrainerExample2 {
                 Path pmmlMdlPath = Paths.get("C:\\ignite\\dt.pmml");
                 mdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory
 
-               /* Path jsonMdlPath = Paths.get("C:\\ignite\\dt.json");
+                Path jsonMdlPath = Paths.get("C:\\ignite\\dt.json");
                 mdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
-
-                System.out.println(">>> decision tree model " + mdl);*/
 
                 DecisionTreeModel pmmlMdl = new DecisionTreeModel().load(pmmlMdlPath, ModelFormat.PMML);
                 System.out.println(pmmlMdl.toString(true));
 
-                /*DecisionTreeModel jsonMdl = new DecisionTreeModel().load(jsonMdlPath, ModelFormat.JSON);
-                System.out.println(">>> json decision tree  model " + jsonMdl);*/
+                DecisionTreeModel jsonMdl = new DecisionTreeModel().load(jsonMdlPath, ModelFormat.JSON);
+                System.out.println(jsonMdl.toString(true));
 
-
-                // Calculate score.
                 int correctPredictions = 0;
                 for (int i = 0; i < 1000; i++) {
                     LabeledVector<Double> pnt = generatePoint(rnd);
 
-                    double prediction = pmmlMdl.predict(pnt.features());
+                    double prediction = jsonMdl.predict(pnt.features());
                     double lbl = pnt.label();
 
                     if (i % 50 == 1)

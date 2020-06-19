@@ -58,7 +58,7 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
     /**
      * Returns the root node.
      */
-    public DecisionTreeNode rootNode() {
+    public DecisionTreeNode getRootNode() {
         return rootNode;
     }
 
@@ -78,68 +78,6 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
     /** {@inheritDoc} */
     @Override public String toString(boolean pretty) {
         return DecisionTreeTrainer.printTree(rootNode, pretty);
-    }
-
-    @Override
-    public DecisionTreeModel load(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
-                PMML pmml = PMMLUtil.unmarshal(is);
-
-                TreeModel treeModel = (TreeModel) pmml.getModels().get(0);
-
-                DecisionTreeNode newRootNode = buildTree(treeModel.getNode());
-                return new DecisionTreeModel(newRootNode);
-            } catch (IOException | JAXBException | SAXException e) {
-                e.printStackTrace();
-            }
-        } else if (mdlFormat == ModelFormat.JSON) {
-            /*ObjectMapper mapper = new ObjectMapper().configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-
-            KMeansModel.KMeansJSONExportModel exportModel;
-            try {
-                exportModel = mapper
-                        .readValue(new File(path.toAbsolutePath().toString()), KMeansModel.KMeansJSONExportModel.class);
-
-                return exportModel.convert();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }*/
-        }
-        return null;
-    }
-
-    private DecisionTreeNode buildTree(Node node) {
-        Predicate predicate = node.getPredicate();
-
-        if (node.hasNodes()) {
-            Node leftNode = null;
-            Node rightNode = null;
-            for (int i = 0; i < node.getNodes().size(); i++) {
-                if(node.getNodes().get(i).getId().equals("left")) {
-                    leftNode = node.getNodes().get(i);
-                } else if(node.getNodes().get(i).getId().equals("right")) {
-                    rightNode = node.getNodes().get(i);
-                } else {
-                    // TODO: we couldn't handle this case left or right
-                }
-            }
-
-            int featureIdx = Integer.parseInt(((SimplePredicate)predicate).getField().getValue());
-            double threshold = Double.parseDouble(((SimplePredicate)predicate).getValue());
-
-            // TODO: correctly handle missing nodes, add test for that
-            String defaultChild = node.getDefaultChild();
-            if(defaultChild!= null && !defaultChild.isEmpty()) {
-                double missingNodevalue = Double.parseDouble(defaultChild);
-                DecisionTreeLeafNode missingNode = new DecisionTreeLeafNode(missingNodevalue);
-                return new DecisionTreeConditionalNode(featureIdx, threshold, buildTree(rightNode), buildTree(leftNode), missingNode);
-            }
-            return new DecisionTreeConditionalNode(featureIdx, threshold, buildTree(rightNode), buildTree(leftNode), null);
-        } else {
-            return new DecisionTreeLeafNode(Double.parseDouble(node.getScore()));
-        }
-
     }
 
     @Override
@@ -182,27 +120,74 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
         } else {
             ObjectMapper mapper = new ObjectMapper();
 
-           /* try {
-                KMeansModel.KMeansJSONExportModel exportModel = new KMeansModel.KMeansJSONExportModel();
-                List<double[]> listOfCenters = new ArrayList<>();
-                for (int i = 0; i < centers.length; i++) {
-                    listOfCenters.add(centers[i].asArray());
-                }
-
-                exportModel.mdlCenters = listOfCenters;
-                exportModel.versionName = "2.9.0-SNAPSHOT";
-                exportModel.distanceMeasureName = distanceMeasure.getClass().getSimpleName();
-
-                if(distanceMeasure instanceof MinkowskiDistance) {
-                    exportModel.pNorm = ((MinkowskiDistance) distanceMeasure).p();
-                }
-
+            try {
                 File file = new File(path.toAbsolutePath().toString());
-                mapper.writeValue(file, exportModel);
+                mapper.writeValue(file, this);
             } catch (IOException e) {
                 e.printStackTrace();
-            }*/
+            }
         }
+    }
+
+    @Override
+    public DecisionTreeModel load(Path path, ModelFormat mdlFormat) {
+        if (mdlFormat == ModelFormat.PMML) {
+            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+                PMML pmml = PMMLUtil.unmarshal(is);
+
+                TreeModel treeModel = (TreeModel) pmml.getModels().get(0);
+
+                DecisionTreeNode newRootNode = buildTree(treeModel.getNode());
+                return new DecisionTreeModel(newRootNode);
+            } catch (IOException | JAXBException | SAXException e) {
+                e.printStackTrace();
+            }
+        } else if (mdlFormat == ModelFormat.JSON) {
+            ObjectMapper mapper = new ObjectMapper();
+
+            DecisionTreeModel mdl;
+            try {
+                mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), DecisionTreeModel.class);
+
+                return mdl;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private DecisionTreeNode buildTree(Node node) {
+        Predicate predicate = node.getPredicate();
+
+        if (node.hasNodes()) {
+            Node leftNode = null;
+            Node rightNode = null;
+            for (int i = 0; i < node.getNodes().size(); i++) {
+                if(node.getNodes().get(i).getId().equals("left")) {
+                    leftNode = node.getNodes().get(i);
+                } else if(node.getNodes().get(i).getId().equals("right")) {
+                    rightNode = node.getNodes().get(i);
+                } else {
+                    // TODO: we couldn't handle this case left or right
+                }
+            }
+
+            int featureIdx = Integer.parseInt(((SimplePredicate)predicate).getField().getValue());
+            double threshold = Double.parseDouble(((SimplePredicate)predicate).getValue());
+
+            // TODO: correctly handle missing nodes, add test for that
+            String defaultChild = node.getDefaultChild();
+            if(defaultChild!= null && !defaultChild.isEmpty()) {
+                double missingNodevalue = Double.parseDouble(defaultChild);
+                DecisionTreeLeafNode missingNode = new DecisionTreeLeafNode(missingNodevalue);
+                return new DecisionTreeConditionalNode(featureIdx, threshold, buildTree(rightNode), buildTree(leftNode), missingNode);
+            }
+            return new DecisionTreeConditionalNode(featureIdx, threshold, buildTree(rightNode), buildTree(leftNode), null);
+        } else {
+            return new DecisionTreeLeafNode(Double.parseDouble(node.getScore()));
+        }
+
     }
 
     private Node buildPmmlTree(DecisionTreeNode node, Predicate predicate) {

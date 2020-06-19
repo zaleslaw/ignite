@@ -82,7 +82,7 @@ public class DecisionTreeRegressionTrainerIntegrationTest extends GridCommonAbst
             ignite,
             data,
             new DoubleArrayVectorizer<Integer>().labeled(Vectorizer.LabelCoordinate.LAST)
-        ).rootNode();
+        ).getRootNode();
 
         assertTrue(treeNode instanceof DecisionTreeConditionalNode);
 
