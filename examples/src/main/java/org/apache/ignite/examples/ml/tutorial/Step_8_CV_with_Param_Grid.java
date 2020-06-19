@@ -40,6 +40,7 @@ import org.apache.ignite.ml.selection.scoring.metric.classification.Accuracy;
 import org.apache.ignite.ml.selection.split.TrainTestDatasetSplitter;
 import org.apache.ignite.ml.selection.split.TrainTestSplit;
 import org.apache.ignite.ml.tree.DecisionTreeClassificationTrainer;
+import org.apache.ignite.ml.tree.DecisionTreeModel;
 import org.apache.ignite.ml.tree.DecisionTreeNode;
 
 /**
@@ -119,7 +120,7 @@ public class Step_8_CV_with_Param_Grid {
 
                 DecisionTreeClassificationTrainer trainerCV = new DecisionTreeClassificationTrainer();
 
-                CrossValidation<DecisionTreeNode, Integer, Vector> scoreCalculator
+                CrossValidation<DecisionTreeModel, Integer, Vector> scoreCalculator
                     = new CrossValidation<>();
 
                 ParamGrid paramGrid = new ParamGrid()
@@ -156,7 +157,7 @@ public class Step_8_CV_with_Param_Grid {
                     -> System.out.println("Score " + Arrays.toString(score) + " for hyper params " + hyperParams));
 
                 // Train decision tree model.
-                DecisionTreeNode bestMdl = trainer.fit(
+                DecisionTreeModel bestMdl = trainer.fit(
                     ignite,
                     dataCache,
                     split.getTrainFilter(),

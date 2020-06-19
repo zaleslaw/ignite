@@ -29,6 +29,7 @@ import org.apache.ignite.ml.selection.paramgrid.ParamGrid;
 import org.apache.ignite.ml.selection.paramgrid.RandomStrategy;
 import org.apache.ignite.ml.selection.scoring.metric.MetricName;
 import org.apache.ignite.ml.tree.DecisionTreeClassificationTrainer;
+import org.apache.ignite.ml.tree.DecisionTreeModel;
 import org.apache.ignite.ml.tree.DecisionTreeNode;
 import org.junit.Test;
 
@@ -52,7 +53,7 @@ public class CrossValidationTest {
 
         DecisionTreeClassificationTrainer trainer = new DecisionTreeClassificationTrainer(1, 0);
 
-        DebugCrossValidation<DecisionTreeNode, Integer, double[]> scoreCalculator =
+        DebugCrossValidation<DecisionTreeModel, Integer, double[]> scoreCalculator =
             new DebugCrossValidation<>();
 
         Vectorizer<Integer, double[], Integer, Double> vectorizer = new DoubleArrayVectorizer<Integer>().labeled(Vectorizer.LabelCoordinate.FIRST);
@@ -83,7 +84,7 @@ public class CrossValidationTest {
 
         DecisionTreeClassificationTrainer trainer = new DecisionTreeClassificationTrainer(1, 0);
 
-        DebugCrossValidation<DecisionTreeNode, Integer, double[]> scoreCalculator =
+        DebugCrossValidation<DecisionTreeModel, Integer, double[]> scoreCalculator =
             new DebugCrossValidation<>();
 
         int folds = 4;
@@ -297,7 +298,7 @@ public class CrossValidationTest {
 
         DecisionTreeClassificationTrainer trainer = new DecisionTreeClassificationTrainer(1, 0);
 
-        DebugCrossValidation<DecisionTreeNode, Integer, double[]> scoreCalculator =
+        DebugCrossValidation<DecisionTreeModel, Integer, double[]> scoreCalculator =
             new DebugCrossValidation<>();
 
         int folds = 4;

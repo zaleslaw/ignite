@@ -35,7 +35,7 @@ import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.preprocessing.Preprocessor;
 import org.apache.ignite.ml.trainers.DatasetTrainer;
-import org.apache.ignite.ml.tree.DecisionTree;
+import org.apache.ignite.ml.tree.DecisionTreeTrainer;
 import org.apache.ignite.ml.tree.data.DecisionTreeData;
 import org.apache.ignite.ml.tree.data.DecisionTreeDataBuilder;
 
@@ -64,8 +64,8 @@ public class GDBOnTreesLearningStrategy extends GDBLearningStrategy {
         environment.initDeployingContext(vectorizer);
 
         DatasetTrainer<? extends IgniteModel<Vector, Double>, Double> trainer = baseMdlTrainerBuilder.get();
-        assert trainer instanceof DecisionTree;
-        DecisionTree decisionTreeTrainer = (DecisionTree)trainer;
+        assert trainer instanceof DecisionTreeTrainer;
+        DecisionTreeTrainer decisionTreeTrainer = (DecisionTreeTrainer)trainer;
 
         List<IgniteModel<Vector, Double>> models = initLearningState(mdlToUpdate);
 

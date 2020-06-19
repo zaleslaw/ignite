@@ -17,7 +17,11 @@
 
 package org.apache.ignite.ml.tree;
 
+import org.apache.ignite.ml.IgniteModel;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
+
+import java.nio.file.Path;
 
 /**
  * Decision tree leaf node which contains value.
@@ -55,6 +59,6 @@ public final class DecisionTreeLeafNode implements DecisionTreeNode {
 
     /** {@inheritDoc} */
     @Override public String toString(boolean pretty) {
-        return DecisionTree.printTree(this, pretty);
+        return DecisionTreeTrainer.printTree(this, pretty);
     }
 }

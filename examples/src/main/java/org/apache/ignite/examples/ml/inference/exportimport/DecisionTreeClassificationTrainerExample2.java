@@ -15,9 +15,8 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.examples.ml.tree;
+package org.apache.ignite.examples.ml.inference.exportimport;
 
-import java.util.Random;
 import org.apache.commons.math3.util.Precision;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
@@ -25,11 +24,15 @@ import org.apache.ignite.Ignition;
 import org.apache.ignite.cache.affinity.rendezvous.RendezvousAffinityFunction;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.LabeledDummyVectorizer;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.structures.LabeledVector;
 import org.apache.ignite.ml.tree.DecisionTreeClassificationTrainer;
 import org.apache.ignite.ml.tree.DecisionTreeModel;
-import org.apache.ignite.ml.tree.DecisionTreeNode;
+
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Random;
 
 /**
  * Example of using distributed {@link DecisionTreeClassificationTrainer}.
@@ -43,7 +46,7 @@ import org.apache.ignite.ml.tree.DecisionTreeNode;
  * <p>
  * You can change the test data used in this example and re-run it to explore this algorithm further.</p>
  */
-public class DecisionTreeClassificationTrainerExample {
+public class DecisionTreeClassificationTrainerExample2 {
     /**
      * Executes example.
      *
@@ -82,14 +85,30 @@ public class DecisionTreeClassificationTrainerExample {
                     vectorizer
                 );
 
-                System.out.println(">>> Decision tree classification model: " + mdl);
+                System.out.println(mdl.toString(true));
+
+
+                Path pmmlMdlPath = Paths.get("C:\\ignite\\dt.pmml");
+                mdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory
+
+               /* Path jsonMdlPath = Paths.get("C:\\ignite\\dt.json");
+                mdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+
+                System.out.println(">>> decision tree model " + mdl);*/
+
+                DecisionTreeModel pmmlMdl = new DecisionTreeModel().load(pmmlMdlPath, ModelFormat.PMML);
+                System.out.println(pmmlMdl.toString(true));
+
+                /*DecisionTreeModel jsonMdl = new DecisionTreeModel().load(jsonMdlPath, ModelFormat.JSON);
+                System.out.println(">>> json decision tree  model " + jsonMdl);*/
+
 
                 // Calculate score.
                 int correctPredictions = 0;
                 for (int i = 0; i < 1000; i++) {
                     LabeledVector<Double> pnt = generatePoint(rnd);
 
-                    double prediction = mdl.predict(pnt.features());
+                    double prediction = pmmlMdl.predict(pnt.features());
                     double lbl = pnt.label();
 
                     if (i % 50 == 1)

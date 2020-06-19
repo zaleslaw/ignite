@@ -25,7 +25,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Scanner;
 import java.util.TreeMap;
 import org.apache.hadoop.conf.Configuration;
@@ -49,9 +48,7 @@ import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 import org.apache.ignite.ml.regressions.linear.LinearRegressionModel;
 import org.apache.ignite.ml.regressions.logistic.LogisticRegressionModel;
 import org.apache.ignite.ml.svm.SVMLinearClassificationModel;
-import org.apache.ignite.ml.tree.DecisionTreeConditionalNode;
-import org.apache.ignite.ml.tree.DecisionTreeLeafNode;
-import org.apache.ignite.ml.tree.DecisionTreeNode;
+import org.apache.ignite.ml.tree.NodeData;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroup;
@@ -495,7 +492,7 @@ public class SparkModelParser {
             }
 
             final List<IgniteModel<Vector, Double>> models = new ArrayList<>();
-            nodesByTreeId.forEach((key, nodes) -> models.add(buildDecisionTreeModel(nodes)));
+            nodesByTreeId.forEach((key, nodes) -> models.add(NodeData.buildDecisionTreeModel(nodes)));
 
             return new GDBTrainer.GDBModel(models, new WeightedPredictionsAggregator(treeWeights), lbMapper);
         }
@@ -559,7 +556,7 @@ public class SparkModelParser {
                 }
             }
             List<IgniteModel<Vector, Double>> models = new ArrayList<>();
-            nodesByTreeId.forEach((key, nodes) -> models.add(buildDecisionTreeModel(nodes)));
+            nodesByTreeId.forEach((key, nodes) -> models.add(NodeData.buildDecisionTreeModel(nodes)));
             return models;
         }
         catch (IOException e) {
@@ -594,7 +591,7 @@ public class SparkModelParser {
                     nodes.put(nodeData.id, nodeData);
                 }
             }
-            return buildDecisionTreeModel(nodes);
+            return NodeData.buildDecisionTreeModel(nodes);
         }
         catch (IOException e) {
             String msg = "Error reading parquet file: " + e.getMessage();
@@ -604,42 +601,13 @@ public class SparkModelParser {
         return null;
     }
 
-    /**
-     * Builds the DT model by the given sorted map of nodes.
-     *
-     * @param nodes The sorted map of nodes.
-     */
-    private static DecisionTreeNode buildDecisionTreeModel(Map<Integer, NodeData> nodes) {
-        DecisionTreeNode mdl = null;
-        if (!nodes.isEmpty()) {
-            NodeData rootNodeData = (NodeData)((NavigableMap)nodes).firstEntry().getValue();
-            mdl = buildTree(nodes, rootNodeData);
-            return mdl;
-        }
-        return mdl;
-    }
-
-    /**
-     * Build tree or sub-tree based on indices and nodes sorted map as a dictionary.
-     *
-     * @param nodes The sorted map of nodes.
-     * @param rootNodeData Root node data.
-     */
-    @NotNull private static DecisionTreeNode buildTree(Map<Integer, NodeData> nodes,
-        NodeData rootNodeData) {
-        return rootNodeData.isLeafNode ? new DecisionTreeLeafNode(rootNodeData.prediction) : new DecisionTreeConditionalNode(rootNodeData.featureIdx,
-            rootNodeData.threshold,
-            buildTree(nodes, nodes.get(rootNodeData.rightChildId)),
-            buildTree(nodes, nodes.get(rootNodeData.leftChildId)),
-            null);
-    }
 
     /**
      * Form the node data according data in parquet row.
      *
      * @param g The given group presenting the node data from Spark DT model.
      */
-    @NotNull private static SparkModelParser.NodeData extractNodeDataFromParquetRow(SimpleGroup g) {
+    @NotNull private static NodeData extractNodeDataFromParquetRow(SimpleGroup g) {
         NodeData nodeData = new NodeData();
 
         nodeData.id = g.getInteger(0, 0);
@@ -889,42 +857,5 @@ public class SparkModelParser {
         return coefficients;
     }
 
-    /**
-     * Presenting data from one parquet row filled with NodeData in Spark DT model.
-     */
-    private static class NodeData {
-        /** Id. */
-        int id;
 
-        /** Prediction. */
-        double prediction;
-
-        /** Left child id. */
-        int leftChildId;
-
-        /** Right child id. */
-        int rightChildId;
-
-        /** Threshold. */
-        double threshold;
-
-        /** Feature index. */
-        int featureIdx;
-
-        /** Is leaf node. */
-        boolean isLeafNode;
-
-        /** {@inheritDoc} */
-        @Override public String toString() {
-            return "NodeData{" +
-                "id=" + id +
-                ", prediction=" + prediction +
-                ", leftChildId=" + leftChildId +
-                ", rightChildId=" + rightChildId +
-                ", threshold=" + threshold +
-                ", featureIdx=" + featureIdx +
-                ", isLeafNode=" + isLeafNode +
-                '}';
-        }
-    }
 }

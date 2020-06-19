@@ -30,6 +30,7 @@ import org.apache.ignite.ml.selection.cv.CrossValidation;
 import org.apache.ignite.ml.selection.scoring.metric.MetricName;
 import org.apache.ignite.ml.structures.LabeledVector;
 import org.apache.ignite.ml.tree.DecisionTreeClassificationTrainer;
+import org.apache.ignite.ml.tree.DecisionTreeModel;
 import org.apache.ignite.ml.tree.DecisionTreeNode;
 
 /**
@@ -75,7 +76,7 @@ public class CrossValidationExample {
 
                 LabeledDummyVectorizer<Integer, Double> vectorizer = new LabeledDummyVectorizer<>();
 
-                CrossValidation<DecisionTreeNode, Integer, LabeledVector<Double>> scoreCalculator
+                CrossValidation<DecisionTreeModel, Integer, LabeledVector<Double>> scoreCalculator
                     = new CrossValidation<>();
 
                 double[] accuracyScores = scoreCalculator

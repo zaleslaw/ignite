@@ -32,10 +32,10 @@ public final class DecisionTreeConditionalNode implements DecisionTreeNode {
     /** Threshold. */
     private final double threshold;
 
-    /** Node that will be used in case tested value is greater then threshold. */
+    /** Right node that will be used in case tested value is greater then threshold. */
     private DecisionTreeNode thenNode;
 
-    /** Node that will be used in case tested value is not greater then threshold. */
+    /** Left node that will be used in case tested value is not greater then threshold. */
     private DecisionTreeNode elseNode;
 
     /** Node that will be used in case tested value is not presented. */
@@ -120,6 +120,6 @@ public final class DecisionTreeConditionalNode implements DecisionTreeNode {
 
     /** {@inheritDoc} */
     @Override public String toString(boolean pretty) {
-        return DecisionTree.printTree(this, pretty);
+        return DecisionTreeTrainer.printTree(this, pretty);
     }
 }
