@@ -17,33 +17,38 @@
 
 package org.apache.ignite.ml.knn.ann;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.*;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exporter;
+import org.apache.ignite.ml.IgniteModel;
+import org.apache.ignite.ml.environment.deploy.DeployableObject;
+import org.apache.ignite.ml.inference.exchange.JSONReadable;
+import org.apache.ignite.ml.inference.exchange.JSONWritable;
 import org.apache.ignite.ml.knn.NNClassificationModel;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.structures.LabeledVector;
 import org.apache.ignite.ml.structures.LabeledVectorSet;
+import org.apache.ignite.ml.tree.DecisionTreeModel;
 import org.apache.ignite.ml.util.ModelTrace;
 import org.jetbrains.annotations.NotNull;
 
 /**
  * ANN model to predict labels in multi-class classification task.
  */
-public final class ANNClassificationModel extends NNClassificationModel {
+public final class ANNClassificationModel extends NNClassificationModel implements JSONWritable, JSONReadable, DeployableObject {
     /** */
     private static final long serialVersionUID = -127312378991350345L;
 
     /** The labeled set of candidates. */
-    private final LabeledVectorSet<LabeledVector> candidates;
+    private LabeledVectorSet<LabeledVector> candidates;
 
     /** Centroid statistics. */
-    private final ANNClassificationTrainer.CentroidStat centroindsStat;
+    private ANNClassificationTrainer.CentroidStat centroindsStat;
 
     /**
      * Build the model based on a candidates set.
@@ -54,6 +59,10 @@ public final class ANNClassificationModel extends NNClassificationModel {
         ANNClassificationTrainer.CentroidStat centroindsStat) {
        this.candidates = centers;
        this.centroindsStat = centroindsStat;
+    }
+
+    public ANNClassificationModel() {
+
     }
 
     /** */
@@ -202,5 +211,25 @@ public final class ANNClassificationModel extends NNClassificationModel {
             .addField("weighted", String.valueOf(weighted))
             .addField("amount of candidates", String.valueOf(candidates.rowSize()))
             .toString();
+    }
+
+    /** {@inheritDoc} */
+    @JsonIgnore
+    @Override public List<Object> getDependencies() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public ANNClassificationModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
+        ANNClassificationModel mdl;
+        try {
+            mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), ANNClassificationModel.class);
+
+            return mdl;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

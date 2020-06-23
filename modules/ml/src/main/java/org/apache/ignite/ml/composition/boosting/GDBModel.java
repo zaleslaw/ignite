@@ -5,26 +5,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.composition.ModelsComposition;
 import org.apache.ignite.ml.composition.predictionsaggregator.WeightedPredictionsAggregator;
-import org.apache.ignite.ml.inference.exchange.MLReadable;
-import org.apache.ignite.ml.inference.exchange.MLWritable;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
+import org.apache.ignite.ml.inference.exchange.JSONReadable;
+import org.apache.ignite.ml.inference.exchange.JSONWritable;
 import org.apache.ignite.ml.math.functions.IgniteFunction;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.tree.DecisionTreeModel;
-import org.dmg.pmml.*;
-import org.jpmml.model.PMMLUtil;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.List;
 
 /**
  * GDB model.
  */
-public final class GDBModel extends ModelsComposition<DecisionTreeModel> implements MLReadable, MLWritable {
+public final class GDBModel extends ModelsComposition<DecisionTreeModel> implements JSONReadable, JSONWritable {
     /** Serial version uid. */
     private static final long serialVersionUID = 3476661240155508004L;
 
@@ -63,62 +58,18 @@ public final class GDBModel extends ModelsComposition<DecisionTreeModel> impleme
         }
     }
 
-    @Override public GDBModel load(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            /*try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
-                PMML pmml = PMMLUtil.unmarshal(is);
+    @Override public GDBModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
 
-                TreeModel treeModel = (TreeModel) pmml.getModels().get(0);
+        GDBModel mdl;
+        try {
+            mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), GDBModel.class);
 
-                DecisionTreeNode newRootNode = buildTree(treeModel.getNode());
-                return new DecisionTreeModel(newRootNode);
-            } catch (IOException | JAXBException | SAXException e) {
-                e.printStackTrace();
-            }*/
-        } else if (mdlFormat == ModelFormat.JSON) {
-            ObjectMapper mapper = new ObjectMapper();
-
-            GDBModel mdl;
-            try {
-                mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), GDBModel.class);
-
-                return mdl;
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            return mdl;
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+
         return null;
-    }
-
-    @Override public void save(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
-            /*EnsembleModel treeModel = new TreeModel()
-                    .setModelName("decision tree")
-                    .setSplitCharacteristic(TreeModel.SplitCharacteristic.BINARY_SPLIT);*/
-
-
-                Header header = new Header();
-                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
-                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
-                        .addModels(null);
-
-
-                PMMLUtil.marshal(pmml, out);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-        } else {
-            ObjectMapper mapper = new ObjectMapper();
-
-            try {
-                File file = new File(path.toAbsolutePath().toString());
-                mapper.writeValue(file, this);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
     }
 }

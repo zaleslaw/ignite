@@ -33,13 +33,13 @@ import java.util.stream.DoubleStream;
  */
 public abstract class DistributionMixture<C extends Distribution> implements Distribution {
     /** Component probabilities. */
-    private final Vector componentProbs;
+    private Vector componentProbs;
 
     /** Distributions. */
-    private final List<C> distributions;
+    private List<C> distributions;
 
     /** Dimension. */
-    private final int dimension;
+    private int dimension;
 
     /**
      * Creates an instance of DistributionMixture.
@@ -60,6 +60,9 @@ public abstract class DistributionMixture<C extends Distribution> implements Dis
         this.distributions = distributions;
         this.componentProbs = componentProbs;
         this.dimension = dimension;
+    }
+
+    public DistributionMixture() {
     }
 
     /** {@inheritDoc} */

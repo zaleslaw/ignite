@@ -26,7 +26,6 @@ import org.apache.ignite.ml.composition.boosting.GDBModel;
 import org.apache.ignite.ml.composition.boosting.convergence.mean.MeanAbsValueConvergenceCheckerFactory;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DoubleArrayVectorizer;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.functions.IgniteFunction;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.trainers.DatasetTrainer;
@@ -73,16 +72,12 @@ public class GDBOnTreesRegressionTrainerExample2 {
                     new DoubleArrayVectorizer<Integer>().labeled(Vectorizer.LabelCoordinate.LAST)
                 );
 
-                  /*Path pmmlMdlPath = Paths.get("C:\\ignite\\rf.pmml");
-                randomForestMdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory*/
 
                 Path jsonMdlPath = Paths.get("C:\\ignite\\reggdb.json");
-                mdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+                mdl.toJSON(jsonMdlPath); // TODO: write to the root in tmp directory
 
-                /*GDBModel pmmlMdl = new RandomForestModel().load(pmmlMdlPath, ModelFormat.PMML);
-                System.out.println(pmmlMdl.toString(true));*/
                 IgniteFunction<Double, Double> lbMapper = lb -> lb;
-                GDBModel jsonMdl = new GDBModel().load(jsonMdlPath, ModelFormat.JSON).withLblMapping(lbMapper);
+                GDBModel jsonMdl = new GDBModel().fromJSON(jsonMdlPath).withLblMapping(lbMapper);
                 System.out.println(jsonMdl.toString(true));
 
                 System.out.println(">>> ---------------------------------");

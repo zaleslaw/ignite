@@ -25,7 +25,6 @@ import org.apache.ignite.examples.ml.util.SandboxMLCache;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.regressions.logistic.LogisticRegressionModel;
 import org.apache.ignite.ml.selection.scoring.evaluator.Evaluator;
@@ -62,10 +61,10 @@ public class LogRegFromSparkThroughPMMLExample2 {
                 Path path = IgniteUtils.resolveIgnitePath("examples/src/main/resources/models/spark/iris.pmml")
                     .toPath();
 
-                LogisticRegressionModel mdl = new LogisticRegressionModel().load(path, ModelFormat.PMML);
+                LogisticRegressionModel mdl = new LogisticRegressionModel().fromPMML(path);
                 System.out.println("\n>>> Logistic regression model from PMML file: " + mdl);
 
-                mdl.save(Paths.get("C:\\ignite\\iris.pmml"), ModelFormat.PMML); // TODO: write to the root in tmp directory
+                mdl.toPMML(Paths.get("C:\\ignite\\iris.pmml")); // TODO: write to the root in tmp directory
 
                 double accuracy = Evaluator.evaluate(
                         dataCache,
@@ -79,10 +78,10 @@ public class LogRegFromSparkThroughPMMLExample2 {
 
 
                 Path pathToJsonModel = Paths.get("C:\\ignite\\iris.json");
-                mdl.save(pathToJsonModel, ModelFormat.JSON); // TODO: write to the root in tmp directory
+                mdl.toJSON(pathToJsonModel); // TODO: write to the root in tmp directory
 
 
-                LogisticRegressionModel mdl2 = new LogisticRegressionModel().load(pathToJsonModel, ModelFormat.JSON);
+                LogisticRegressionModel mdl2 = new LogisticRegressionModel().fromJSON(pathToJsonModel);
 
                 System.out.println("\n>>> Logistic regression model from JSON file: " + mdl);
 

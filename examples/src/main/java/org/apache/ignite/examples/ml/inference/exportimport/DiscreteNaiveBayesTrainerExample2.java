@@ -24,77 +24,74 @@ import org.apache.ignite.examples.ml.util.MLSandboxDatasets;
 import org.apache.ignite.examples.ml.util.SandboxMLCache;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
+import org.apache.ignite.ml.knn.ann.ANNClassificationModel;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.ignite.ml.naivebayes.discrete.DiscreteNaiveBayesModel;
+import org.apache.ignite.ml.naivebayes.discrete.DiscreteNaiveBayesTrainer;
 import org.apache.ignite.ml.selection.scoring.evaluator.Evaluator;
 import org.apache.ignite.ml.selection.scoring.metric.MetricName;
-import org.apache.ignite.ml.svm.SVMLinearClassificationModel;
-import org.apache.ignite.ml.svm.SVMLinearClassificationTrainer;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Run SVM binary-class classification model ({@link SVMLinearClassificationModel}) over distributed dataset.
+ * Run naive Bayes classification model based on <a href=https://en.wikipedia.org/wiki/Naive_Bayes_classifier#Multinomial_naive_Bayes">
+ * naive Bayes classifier</a> algorithm ({@link DiscreteNaiveBayesTrainer}) over distributed cache.
  * <p>
- * Code in this example launches Ignite grid and fills the cache with test data points (based on the
- * <a href="https://en.wikipedia.org/wiki/Iris_flower_data_set"></a>Iris dataset</a>).</p>
+ * Code in this example launches Ignite grid and fills the cache with test data points.
+ * </p>
  * <p>
- * After that it trains the model based on the specified data using KMeans algorithm.</p>
+ * After that it trains the Discrete naive Bayes classification model based on the specified data.</p>
  * <p>
- * Finally, this example loops over the test set of data points, applies the trained model to predict what cluster does
- * this point belong to, compares prediction to expected outcome (ground truth), and builds
+ * Finally, this example loops over the test set of data points, applies the trained model to predict the target value,
+ * compares prediction to expected outcome (ground truth), and builds
  * <a href="https://en.wikipedia.org/wiki/Confusion_matrix">confusion matrix</a>.</p>
  * <p>
  * You can change the test data used in this example and re-run it to explore this algorithm further.</p>
  */
-public class SVMBinaryClassificationExample2 {
+public class DiscreteNaiveBayesTrainerExample2 {
     /**
      * Run example.
      */
     public static void main(String[] args) throws IOException {
-        System.out.println();
-        System.out.println(">>> SVM Binary classification model over cached dataset usage example started.");
+        System.out.println(">>> Discrete naive Bayes classification model over partitioned dataset usage example started.");
         // Start ignite grid.
         try (Ignite ignite = Ignition.start("examples/config/example-ignite.xml")) {
             System.out.println(">>> Ignite grid started.");
 
             IgniteCache<Integer, Vector> dataCache = null;
             try {
-                dataCache = new SandboxMLCache(ignite).fillCacheWith(MLSandboxDatasets.TWO_CLASSED_IRIS);
+                dataCache = new SandboxMLCache(ignite).fillCacheWith(MLSandboxDatasets.ENGLISH_VS_SCOTTISH);
 
-                SVMLinearClassificationTrainer trainer = new SVMLinearClassificationTrainer();
+                double[][] thresholds = new double[][] {{.5}, {.5}, {.5}, {.5}, {.5}};
+                System.out.println(">>> Create new Discrete naive Bayes classification trainer object.");
+                DiscreteNaiveBayesTrainer trainer = new DiscreteNaiveBayesTrainer()
+                    .setBucketThresholds(thresholds);
 
+                System.out.println(">>> Perform the training to get the model.");
                 Vectorizer<Integer, Vector, Integer, Double> vectorizer = new DummyVectorizer<Integer>()
                     .labeled(Vectorizer.LabelCoordinate.FIRST);
 
-                SVMLinearClassificationModel mdl = trainer.fit(ignite, dataCache, vectorizer);
+                DiscreteNaiveBayesModel mdl = trainer.fit(ignite, dataCache, vectorizer);
+                System.out.println(">>> Discrete Naive Bayes model: " + mdl);
 
-                Path pmmlMdlPath = Paths.get("C:\\ignite\\svm.pmml");
-                mdl.toPMML(pmmlMdlPath); // TODO: write to the root in tmp directory
-
-                Path jsonMdlPath = Paths.get("C:\\ignite\\svm.json");
+                Path jsonMdlPath = Paths.get("C:\\ignite\\discretenb.json");
                 mdl.toJSON(jsonMdlPath); // TODO: write to the root in tmp directory
 
-                System.out.println(">>> SVM model " + mdl);
+                DiscreteNaiveBayesModel jsonMdl = new DiscreteNaiveBayesModel().fromJSON(jsonMdlPath);
+                System.out.println(jsonMdl.toString(true)); // TODO: add special json model for gmm without vectors
 
-                SVMLinearClassificationModel pmmlMdl = new SVMLinearClassificationModel().fromPMML(pmmlMdlPath);
-
-                double accuracy = Evaluator.evaluate(dataCache,
-                    pmmlMdl, vectorizer, MetricName.ACCURACY
+                double accuracy = Evaluator.evaluate(
+                    dataCache,
+                        jsonMdl,
+                    vectorizer,
+                    MetricName.ACCURACY
                 );
 
                 System.out.println("\n>>> Accuracy " + accuracy);
 
-                SVMLinearClassificationModel jsonMdl = new SVMLinearClassificationModel().fromJSON(jsonMdlPath);
-
-                accuracy = Evaluator.evaluate(dataCache,
-                        jsonMdl, vectorizer, MetricName.ACCURACY
-                );
-
-                System.out.println("\n>>> Accuracy " + accuracy);
-
-                System.out.println(">>> SVM Binary classification model over cache based dataset usage example completed.");
+                System.out.println(">>> Discrete Naive bayes model over partitioned dataset usage example completed.");
             }
             finally {
                 if (dataCache != null)
@@ -105,4 +102,5 @@ public class SVMBinaryClassificationExample2 {
             System.out.flush();
         }
     }
+
 }

@@ -19,9 +19,10 @@ package org.apache.ignite.ml.tree;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.IgniteModel;
-import org.apache.ignite.ml.inference.exchange.MLReadable;
-import org.apache.ignite.ml.inference.exchange.MLWritable;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
+import org.apache.ignite.ml.inference.exchange.JSONReadable;
+import org.apache.ignite.ml.inference.exchange.JSONWritable;
+import org.apache.ignite.ml.inference.exchange.PMMLReadable;
+import org.apache.ignite.ml.inference.exchange.PMMLWritable;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.dmg.pmml.*;
 import org.dmg.pmml.tree.Node;
@@ -36,7 +37,7 @@ import java.nio.file.Path;
 /**
  * Base class for decision tree models.
  */
-public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritable, MLReadable {
+public class DecisionTreeModel implements IgniteModel<Vector, Double>, JSONWritable, JSONReadable, PMMLWritable, PMMLReadable {
     /**
      * Root node.
      */
@@ -81,70 +82,8 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
     }
 
     @Override
-    public void save(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
-                TreeModel treeModel = new TreeModel()
-                        .setModelName("decision tree")
-                        .setSplitCharacteristic(TreeModel.SplitCharacteristic.BINARY_SPLIT);
-
-                Predicate predicate;
-
-                if (rootNode instanceof DecisionTreeConditionalNode) {
-                    DecisionTreeConditionalNode condRootNode = ((DecisionTreeConditionalNode) rootNode);
-
-                    FieldName fieldName = FieldName.create(String.valueOf(condRootNode.getCol()));
-
-                    String threshold = String.valueOf(condRootNode.getThreshold());
-
-                    predicate = new SimplePredicate(fieldName, SimplePredicate.Operator.GREATER_THAN)
-                            .setValue(threshold);
-                } else {
-                    predicate = new True(); // TODO: add test for 1-level tree
-                }
-
-                treeModel.setNode(buildPmmlTree(rootNode, predicate));
-
-                Header header = new Header();
-                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
-                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
-                        .addModels(treeModel);
-
-
-                PMMLUtil.marshal(pmml, out);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-        } else {
+    public DecisionTreeModel fromJSON(Path path) {
             ObjectMapper mapper = new ObjectMapper();
-
-            try {
-                File file = new File(path.toAbsolutePath().toString());
-                mapper.writeValue(file, this);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    @Override
-    public DecisionTreeModel load(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
-                PMML pmml = PMMLUtil.unmarshal(is);
-
-                TreeModel treeModel = (TreeModel) pmml.getModels().get(0);
-
-                DecisionTreeNode newRootNode = buildTree(treeModel.getNode());
-                return new DecisionTreeModel(newRootNode);
-            } catch (IOException | JAXBException | SAXException e) {
-                e.printStackTrace();
-            }
-        } else if (mdlFormat == ModelFormat.JSON) {
-            ObjectMapper mapper = new ObjectMapper();
-
             DecisionTreeModel mdl;
             try {
                 mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), DecisionTreeModel.class);
@@ -153,8 +92,59 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        return null;
+    }
+
+    @Override
+    public DecisionTreeModel fromPMML(Path path) {
+        try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+            PMML pmml = PMMLUtil.unmarshal(is);
+
+            TreeModel treeModel = (TreeModel) pmml.getModels().get(0);
+
+            DecisionTreeNode newRootNode = buildTree(treeModel.getNode());
+            return new DecisionTreeModel(newRootNode);
+        } catch (IOException | JAXBException | SAXException e) {
+            e.printStackTrace();
         }
         return null;
+    }
+
+    @Override
+    public void toPMML(Path path) {
+        try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
+            TreeModel treeModel = new TreeModel()
+                    .setModelName("decision tree")
+                    .setSplitCharacteristic(TreeModel.SplitCharacteristic.BINARY_SPLIT);
+
+            Predicate predicate;
+
+            if (rootNode instanceof DecisionTreeConditionalNode) {
+                DecisionTreeConditionalNode condRootNode = ((DecisionTreeConditionalNode) rootNode);
+
+                FieldName fieldName = FieldName.create(String.valueOf(condRootNode.getCol()));
+
+                String threshold = String.valueOf(condRootNode.getThreshold());
+
+                predicate = new SimplePredicate(fieldName, SimplePredicate.Operator.GREATER_THAN)
+                        .setValue(threshold);
+            } else {
+                predicate = new True(); // TODO: add test for 1-level tree
+            }
+
+            treeModel.setNode(buildPmmlTree(rootNode, predicate));
+
+            Header header = new Header();
+            header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
+            PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
+                    .addModels(treeModel);
+
+
+            PMMLUtil.marshal(pmml, out);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private DecisionTreeNode buildTree(Node node) {
@@ -244,6 +234,7 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
         } else {
             return new True();
         }
-
     }
+
+
 }

@@ -17,11 +17,18 @@
 
 package org.apache.ignite.ml.naivebayes.discrete;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.environment.deploy.DeployableObject;
+import org.apache.ignite.ml.inference.exchange.JSONReadable;
+import org.apache.ignite.ml.inference.exchange.JSONWritable;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.naivebayes.BayesModel;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 
@@ -30,7 +37,8 @@ import java.util.List;
  * {@code p(C_k,y) =x_1*p_k1^x *...*x_i*p_ki^x_i}. Where {@code x_i} is a discrete feature, {@code p_ki} is a prior
  * probability probability of class {@code p(x|C_k)}. Returns the number of the most possible class.
  */
-public class DiscreteNaiveBayesModel implements BayesModel<DiscreteNaiveBayesModel, Vector, Double>, DeployableObject {
+public class DiscreteNaiveBayesModel implements BayesModel<DiscreteNaiveBayesModel, Vector, Double>,
+        JSONWritable, JSONReadable, DeployableObject {
     /** Serial version uid. */
     private static final long serialVersionUID = -127386523291350345L;
 
@@ -38,23 +46,23 @@ public class DiscreteNaiveBayesModel implements BayesModel<DiscreteNaiveBayesMod
      * Probabilities of features for all classes for each label. {@code labels[c][f][b]} contains a probability for
      * class {@code c} for feature {@code f} for bucket {@code b}.
      */
-    private final double[][][] probabilities;
+    private double[][][] probabilities;
 
     /** Prior probabilities of each class */
-    private final double[] clsProbabilities;
+    private double[] clsProbabilities;
 
     /** Labels. */
-    private final double[] labels;
+    private double[] labels;
 
     /**
      * The bucket thresholds to convert a features to discrete values. {@code bucketThresholds[f][b]} contains the right
      * border for feature {@code f} for bucket {@code b}. Everything which is above the last thresdold goes to the next
      * bucket.
      */
-    private final double[][] bucketThresholds;
+    private double[][] bucketThresholds;
 
-    /** Amount values in each buckek for each feature per label. */
-    private final DiscreteNaiveBayesSumsHolder sumsHolder;
+    /** Amount values in each bucket for each feature per label. */
+    private DiscreteNaiveBayesSumsHolder sumsHolder;
 
     /**
      * @param probabilities Probabilities of features for classes.
@@ -70,6 +78,10 @@ public class DiscreteNaiveBayesModel implements BayesModel<DiscreteNaiveBayesMod
         this.labels = labels;
         this.bucketThresholds = bucketThresholds;
         this.sumsHolder = sumsHolder;
+    }
+
+    public DiscreteNaiveBayesModel() {
+
     }
 
     /** {@inheritDoc} */
@@ -146,7 +158,22 @@ public class DiscreteNaiveBayesModel implements BayesModel<DiscreteNaiveBayesMod
     }
 
     /** {@inheritDoc} */
+    @JsonIgnore
     @Override public List<Object> getDependencies() {
         return Collections.emptyList();
+    }
+
+    @Override
+    public DiscreteNaiveBayesModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
+        DiscreteNaiveBayesModel mdl;
+        try {
+            mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), DiscreteNaiveBayesModel.class);
+
+            return mdl;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

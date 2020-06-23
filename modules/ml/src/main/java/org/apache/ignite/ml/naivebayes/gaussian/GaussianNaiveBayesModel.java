@@ -17,11 +17,20 @@
 
 package org.apache.ignite.ml.naivebayes.gaussian;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exporter;
+import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.environment.deploy.DeployableObject;
+import org.apache.ignite.ml.inference.exchange.JSONReadable;
+import org.apache.ignite.ml.inference.exchange.JSONWritable;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.naivebayes.BayesModel;
+import org.apache.ignite.ml.naivebayes.discrete.DiscreteNaiveBayesModel;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 
@@ -29,24 +38,25 @@ import java.util.List;
  * Simple naive Bayes model which predicts result value {@code y} belongs to a class {@code C_k, k in [0..K]} as {@code
  * p(C_k,y) = p(C_k)*p(y_1,C_k) *...*p(y_n,C_k) / p(y)}. Return the number of the most possible class.
  */
-public class GaussianNaiveBayesModel implements BayesModel<GaussianNaiveBayesModel, Vector, Double>, DeployableObject {
+public class GaussianNaiveBayesModel implements BayesModel<GaussianNaiveBayesModel, Vector, Double>,
+        JSONWritable, JSONReadable, DeployableObject {
     /** Serial version uid. */
     private static final long serialVersionUID = -127386523291350345L;
 
     /** Means of features for all classes. kth row contains means for labels[k] class. */
-    private final double[][] means;
+    private double[][] means;
 
     /** Variances of features for all classes. kth row contains variances for labels[k] class */
-    private final double[][] variances;
+    private double[][] variances;
 
     /** Prior probabilities of each class */
-    private final double[] classProbabilities;
+    private double[] classProbabilities;
 
     /** Labels. */
-    private final double[] labels;
+    private double[] labels;
 
     /** Feature sum, squared sum and count per label. */
-    private final GaussianNaiveBayesSumsHolder sumsHolder;
+    private GaussianNaiveBayesSumsHolder sumsHolder;
 
     /**
      * @param means Means of features for all classes.
@@ -63,6 +73,11 @@ public class GaussianNaiveBayesModel implements BayesModel<GaussianNaiveBayesMod
         this.labels = labels;
         this.sumsHolder = sumsHolder;
     }
+
+    public GaussianNaiveBayesModel() {
+    }
+
+
 
     /** {@inheritDoc} */
     @Override public <P> void saveModel(Exporter<GaussianNaiveBayesModel, P> exporter, P path) {
@@ -128,7 +143,22 @@ public class GaussianNaiveBayesModel implements BayesModel<GaussianNaiveBayesMod
     }
 
     /** {@inheritDoc} */
+    @JsonIgnore
     @Override public List<Object> getDependencies() {
         return Collections.emptyList();
+    }
+
+    @Override
+    public GaussianNaiveBayesModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
+        GaussianNaiveBayesModel mdl;
+        try {
+            mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), GaussianNaiveBayesModel.class);
+
+            return mdl;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

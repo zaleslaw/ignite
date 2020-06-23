@@ -24,7 +24,6 @@ import org.apache.ignite.examples.ml.util.MLSandboxDatasets;
 import org.apache.ignite.examples.ml.util.SandboxMLCache;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.regressions.linear.LinearRegressionLSQRTrainer;
 import org.apache.ignite.ml.regressions.linear.LinearRegressionModel;
@@ -70,8 +69,8 @@ public class LinearRegressionLSQRTrainerExample2 {
                 LinearRegressionModel mdl = trainer.fit(ignite, dataCache, new DummyVectorizer<Integer>()
                     .labeled(Vectorizer.LabelCoordinate.FIRST));
 
-                mdl.save(Paths.get("C:\\ignite\\linreg.pmml"), ModelFormat.PMML);
-                mdl.save(Paths.get("C:\\ignite\\linreg.json"), ModelFormat.JSON);
+                mdl.toPMML(Paths.get("C:\\ignite\\linreg.pmml"));
+                mdl.toJSON(Paths.get("C:\\ignite\\linreg.json"));
 
                 double rmse = Evaluator.evaluate(
                     dataCache, mdl,

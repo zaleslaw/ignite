@@ -29,11 +29,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
+import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.environment.deploy.DeployableObject;
-import org.apache.ignite.ml.inference.exchange.JSONModel;
-import org.apache.ignite.ml.inference.exchange.MLReadable;
-import org.apache.ignite.ml.inference.exchange.MLWritable;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
+import org.apache.ignite.ml.inference.exchange.*;
 import org.apache.ignite.ml.math.Tracer;
 import org.apache.ignite.ml.math.distances.*;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
@@ -52,7 +50,7 @@ import javax.xml.bind.JAXBException;
  * This class encapsulates result of clusterization by KMeans algorithm.
  */
 public final class KMeansModel implements ClusterizationModel<Vector, Integer>, Exportable<KMeansModelFormat>,
-        MLWritable, MLReadable, DeployableObject {
+        JSONWritable, JSONReadable, PMMLReadable, PMMLWritable, DeployableObject {
     /** Centers of clusters. */
     private Vector[] centers;
 
@@ -181,52 +179,8 @@ public final class KMeansModel implements ClusterizationModel<Vector, Integer>, 
     }
 
     /** {@inheritDoc} */
-    @Override public KMeansModel load(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
-                PMML pmml = PMMLUtil.unmarshal(is);
-
-                ClusteringModel clusteringModel = (ClusteringModel) pmml.getModels().get(0);
-
-                List<Cluster> clusters = clusteringModel.getClusters();
-
-                Vector[] centroids = new DenseVector[clusters.size()];
-
-                for (int i = 0; i < clusters.size(); i++) {
-                    Cluster cluster = clusters.get(i);
-                    Integer centroidSize = cluster.getArray().getN();
-                    centroids[i] = new DenseVector(centroidSize);
-                    String[] elems = cluster.getArray().getValue().split(";");
-
-                    if(elems.length != centroidSize) {
-                        throw new PMMLModelParsingCentroidSizeException(); // TODO: write test and refactor hierarchy of exceptions
-                    } else {
-                        for (int j = 0; j < centroidSize; j++) {
-                            double coefficient = Double.parseDouble(elems[j]); // TODO: handle exceptions
-                            centroids[i].set(j, coefficient);
-                        }
-                    }
-                }
-
-                DistanceMeasure distanceMeasure;
-                Measure measure = clusteringModel.getComparisonMeasure().getMeasure();
-                if(measure instanceof SquaredEuclidean) {
-                    distanceMeasure = new EuclideanDistance();
-                } else if (measure instanceof Minkowski) {
-                    double p = ((Minkowski)measure).getPParameter();
-                    distanceMeasure = new MinkowskiDistance(p);
-                } else if (measure instanceof Chebychev) {
-                    distanceMeasure = new ChebyshevDistance();
-                } else {
-                    distanceMeasure = new EuclideanDistance(); // by default or TODO: throw exception
-                }
-                return new KMeansModel(centroids, distanceMeasure);
-            } catch (IOException | JAXBException | SAXException e) {
-                e.printStackTrace();
-            }
-            return null;
-        } else if (mdlFormat == ModelFormat.JSON) {
-            ObjectMapper mapper = new ObjectMapper().configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+    @Override public KMeansModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper().configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
 
             KMeansJSONExportModel exportModel;
             try {
@@ -237,70 +191,12 @@ public final class KMeansModel implements ClusterizationModel<Vector, Integer>, 
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
         return null;
     }
 
     // TODO: https://github.com/apache/spark/blob/master/mllib/src/main/scala/org/apache/spark/mllib/pmml/export/KMeansPMMLModelExport.scala
     /** {@inheritDoc} */
-    @Override public void save(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
-
-                ComparisonMeasure comparisonMeasure;
-
-                if(distanceMeasure instanceof EuclideanDistance) {
-                    comparisonMeasure = new ComparisonMeasure()
-                            .setKind(ComparisonMeasure.Kind.DISTANCE)
-                            .setMeasure(new SquaredEuclidean());
-                } else if (distanceMeasure instanceof MinkowskiDistance) {
-                    comparisonMeasure = new ComparisonMeasure()
-                            .setKind(ComparisonMeasure.Kind.DISTANCE)
-                            .setMeasure(new Minkowski(((MinkowskiDistance)distanceMeasure).p())); // TODO: add tests for that
-                } else if (distanceMeasure instanceof ChebyshevDistance) {
-                    comparisonMeasure = new ComparisonMeasure()
-                            .setKind(ComparisonMeasure.Kind.DISTANCE)
-                            .setMeasure(new Chebychev());
-                } else {
-                    // TODO: log default value or throw exception for uknown model distance format
-                    comparisonMeasure = new ComparisonMeasure()
-                            .setKind(ComparisonMeasure.Kind.DISTANCE)
-                            .setMeasure(new SquaredEuclidean());
-                }
-
-                ClusteringModel clusteringModel = new ClusteringModel()
-                        .setModelName("k-means")
-                        .setComparisonMeasure(comparisonMeasure)
-                        .setMiningFunction(MiningFunction.CLUSTERING)
-                        .setModelClass(ClusteringModel.ModelClass.CENTER_BASED)
-                        .setNumberOfClusters(centers.length);
-
-                for (int i = 0; i < centers.length; i++) {
-                    Vector centroid = centers[i];
-
-                    Cluster cluster = new Cluster();
-                    cluster.setName("cluster_" + i)
-                            .setArray(new org.dmg.pmml.Array()
-                                    .setType(Array.Type.REAL)
-                                    .setN(centroid.size())
-                                    .setValue(Arrays.stream(centroid.asArray())
-                                                    .mapToObj(String::valueOf)
-                                                    .collect(Collectors.joining(";"))));
-                    clusteringModel.addClusters(cluster);
-                }
-
-                Header header = new Header();
-                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
-                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
-                        .addModels(clusteringModel);
-
-                PMMLUtil.marshal(pmml, out);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-        } else {
+    @Override public void toJSON(Path path) {
             ObjectMapper mapper = new ObjectMapper();
 
             try {
@@ -323,6 +219,110 @@ public final class KMeansModel implements ClusterizationModel<Vector, Integer>, 
             } catch (IOException e) {
                 e.printStackTrace();
             }
+
+    }
+
+    @Override
+    public KMeansModel fromPMML(Path path) {
+        try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+            PMML pmml = PMMLUtil.unmarshal(is);
+
+            ClusteringModel clusteringModel = (ClusteringModel) pmml.getModels().get(0);
+
+            List<Cluster> clusters = clusteringModel.getClusters();
+
+            Vector[] centroids = new DenseVector[clusters.size()];
+
+            for (int i = 0; i < clusters.size(); i++) {
+                Cluster cluster = clusters.get(i);
+                Integer centroidSize = cluster.getArray().getN();
+                centroids[i] = new DenseVector(centroidSize);
+                String[] elems = cluster.getArray().getValue().split(";");
+
+                if(elems.length != centroidSize) {
+                    throw new PMMLModelParsingCentroidSizeException(); // TODO: write test and refactor hierarchy of exceptions
+                } else {
+                    for (int j = 0; j < centroidSize; j++) {
+                        double coefficient = Double.parseDouble(elems[j]); // TODO: handle exceptions
+                        centroids[i].set(j, coefficient);
+                    }
+                }
+            }
+
+            DistanceMeasure distanceMeasure;
+            Measure measure = clusteringModel.getComparisonMeasure().getMeasure();
+            if(measure instanceof SquaredEuclidean) {
+                distanceMeasure = new EuclideanDistance();
+            } else if (measure instanceof Minkowski) {
+                double p = ((Minkowski)measure).getPParameter();
+                distanceMeasure = new MinkowskiDistance(p);
+            } else if (measure instanceof Chebychev) {
+                distanceMeasure = new ChebyshevDistance();
+            } else {
+                distanceMeasure = new EuclideanDistance(); // by default or TODO: throw exception
+            }
+            return new KMeansModel(centroids, distanceMeasure);
+        } catch (IOException | JAXBException | SAXException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    @Override
+    public void toPMML(Path path) {
+        try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
+
+            ComparisonMeasure comparisonMeasure;
+
+            if(distanceMeasure instanceof EuclideanDistance) {
+                comparisonMeasure = new ComparisonMeasure()
+                        .setKind(ComparisonMeasure.Kind.DISTANCE)
+                        .setMeasure(new SquaredEuclidean());
+            } else if (distanceMeasure instanceof MinkowskiDistance) {
+                comparisonMeasure = new ComparisonMeasure()
+                        .setKind(ComparisonMeasure.Kind.DISTANCE)
+                        .setMeasure(new Minkowski(((MinkowskiDistance)distanceMeasure).p())); // TODO: add tests for that
+            } else if (distanceMeasure instanceof ChebyshevDistance) {
+                comparisonMeasure = new ComparisonMeasure()
+                        .setKind(ComparisonMeasure.Kind.DISTANCE)
+                        .setMeasure(new Chebychev());
+            } else {
+                // TODO: log default value or throw exception for uknown model distance format
+                comparisonMeasure = new ComparisonMeasure()
+                        .setKind(ComparisonMeasure.Kind.DISTANCE)
+                        .setMeasure(new SquaredEuclidean());
+            }
+
+            ClusteringModel clusteringModel = new ClusteringModel()
+                    .setModelName("k-means")
+                    .setComparisonMeasure(comparisonMeasure)
+                    .setMiningFunction(MiningFunction.CLUSTERING)
+                    .setModelClass(ClusteringModel.ModelClass.CENTER_BASED)
+                    .setNumberOfClusters(centers.length);
+
+            for (int i = 0; i < centers.length; i++) {
+                Vector centroid = centers[i];
+
+                Cluster cluster = new Cluster();
+                cluster.setName("cluster_" + i)
+                        .setArray(new org.dmg.pmml.Array()
+                                .setType(Array.Type.REAL)
+                                .setN(centroid.size())
+                                .setValue(Arrays.stream(centroid.asArray())
+                                        .mapToObj(String::valueOf)
+                                        .collect(Collectors.joining(";"))));
+                clusteringModel.addClusters(cluster);
+            }
+
+            Header header = new Header();
+            header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
+            PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
+                    .addModels(clusteringModel);
+
+            PMMLUtil.marshal(pmml, out);
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 

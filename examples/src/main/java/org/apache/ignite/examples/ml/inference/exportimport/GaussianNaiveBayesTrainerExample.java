@@ -22,38 +22,41 @@ import org.apache.ignite.IgniteCache;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.examples.ml.util.MLSandboxDatasets;
 import org.apache.ignite.examples.ml.util.SandboxMLCache;
-import org.apache.ignite.ml.clustering.kmeans.KMeansModel;
-import org.apache.ignite.ml.clustering.kmeans.KMeansTrainer;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
-import org.apache.ignite.ml.math.Tracer;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.ignite.ml.naivebayes.discrete.DiscreteNaiveBayesModel;
+import org.apache.ignite.ml.naivebayes.gaussian.GaussianNaiveBayesModel;
+import org.apache.ignite.ml.naivebayes.gaussian.GaussianNaiveBayesTrainer;
+import org.apache.ignite.ml.selection.scoring.evaluator.Evaluator;
+import org.apache.ignite.ml.selection.scoring.metric.MetricName;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Run KMeans clustering algorithm ({@link KMeansTrainer}) over distributed dataset.
+ * Run naive Bayes classification model based on <a href="https://en.wikipedia.org/wiki/Naive_Bayes_classifier"> naive
+ * Bayes classifier</a> algorithm ({@link GaussianNaiveBayesTrainer}) over distributed cache.
  * <p>
  * Code in this example launches Ignite grid and fills the cache with test data points (based on the
  * <a href="https://en.wikipedia.org/wiki/Iris_flower_data_set"></a>Iris dataset</a>).</p>
  * <p>
- * After that it trains the model based on the specified data using
- * <a href="https://en.wikipedia.org/wiki/K-means_clustering">KMeans</a> algorithm.</p>
+ * After that it trains the naive Bayes classification model based on the specified data.</p>
  * <p>
- * Finally, this example loops over the test set of data points, applies the trained model to predict what cluster does
- * this point belong to, and compares prediction to expected outcome (ground truth).</p>
+ * Finally, this example loops over the test set of data points, applies the trained model to predict the target value,
+ * compares prediction to expected outcome (ground truth), and builds
+ * <a href="https://en.wikipedia.org/wiki/Confusion_matrix">confusion matrix</a>.</p>
  * <p>
  * You can change the test data used in this example and re-run it to explore this algorithm further.</p>
  */
-public class KMeansClusterizationExample2 {
+public class GaussianNaiveBayesTrainerExample {
     /**
      * Run example.
      */
     public static void main(String[] args) throws IOException {
         System.out.println();
-        System.out.println(">>> KMeans clustering algorithm over cached dataset usage example started.");
+        System.out.println(">>> Naive Bayes classification model over partitioned dataset usage example started.");
         // Start ignite grid.
         try (Ignite ignite = Ignition.start("examples/config/example-ignite.xml")) {
             System.out.println(">>> Ignite grid started.");
@@ -62,39 +65,36 @@ public class KMeansClusterizationExample2 {
             try {
                 dataCache = new SandboxMLCache(ignite).fillCacheWith(MLSandboxDatasets.TWO_CLASSED_IRIS);
 
-                Vectorizer<Integer, Vector, Integer, Double> vectorizer = new DummyVectorizer<Integer>().labeled(Vectorizer.LabelCoordinate.FIRST);
+                System.out.println(">>> Create new naive Bayes classification trainer object.");
+                GaussianNaiveBayesTrainer trainer = new GaussianNaiveBayesTrainer();
 
-                KMeansTrainer trainer = new KMeansTrainer();
+                System.out.println(">>> Perform the training to get the model.");
 
-                KMeansModel mdl = trainer.fit(
-                    ignite,
-                    dataCache,
-                    vectorizer
-                );
+                Vectorizer<Integer, Vector, Integer, Double> vectorizer = new DummyVectorizer<Integer>()
+                        .labeled(Vectorizer.LabelCoordinate.FIRST);
 
-                System.out.println(">>> KMeans centroids");
-                Tracer.showAscii(mdl.centers()[0]);
-                Tracer.showAscii(mdl.centers()[1]);
-                System.out.println(">>>");
+                GaussianNaiveBayesModel mdl = trainer.fit(ignite, dataCache, vectorizer);
+                System.out.println(">>> Naive Bayes model: " + mdl);
 
-                Path pmmlMdlPath = Paths.get("C:\\ignite\\kmeans.pmml");
-                mdl.toPMML(pmmlMdlPath); // TODO: write to the root in tmp directory
-
-                Path jsonMdlPath = Paths.get("C:\\ignite\\kmeans.json");
+                Path jsonMdlPath = Paths.get("C:\\ignite\\gaussiannb.json");
                 mdl.toJSON(jsonMdlPath); // TODO: write to the root in tmp directory
 
-                System.out.println(">>> kmeans model " + mdl);
+                GaussianNaiveBayesModel jsonMdl = new GaussianNaiveBayesModel().fromJSON(jsonMdlPath);
+                System.out.println(jsonMdl.toString(true)); // TODO: add special json model for gmm without vectors
 
-                KMeansModel pmmlMdl = new KMeansModel().fromPMML(pmmlMdlPath);
-                System.out.println(">>> pmml kmeans model " + pmmlMdl);
+                double accuracy = Evaluator.evaluate(
+                        dataCache,
+                        jsonMdl,
+                    vectorizer,
+                    MetricName.ACCURACY
+                );
 
-                KMeansModel jsonMdl = new KMeansModel().fromJSON(jsonMdlPath);
-                System.out.println(">>> json kmeans model " + jsonMdl);
+                System.out.println("\n>>> Accuracy " + accuracy);
 
+                System.out.println(">>> Naive bayes model over partitioned dataset usage example completed.");
             }
             finally {
-                if (dataCache != null)
-                    dataCache.destroy();
+                dataCache.destroy();
             }
         }
         finally {

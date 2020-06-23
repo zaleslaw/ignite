@@ -25,13 +25,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.IgniteModel;
-import org.apache.ignite.ml.inference.exchange.MLReadable;
-import org.apache.ignite.ml.inference.exchange.MLWritable;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
+import org.apache.ignite.ml.inference.exchange.*;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
-import org.apache.ignite.ml.inference.exchange.JSONModel;
 import org.dmg.pmml.*;
 import org.dmg.pmml.regression.NumericPredictor;
 import org.dmg.pmml.regression.RegressionModel;
@@ -45,7 +42,8 @@ import javax.xml.bind.JAXBException;
  * Simple linear regression model which predicts result value Y as a linear combination of input variables:
  * Y = weights * X + intercept.
  */
-public final class LinearRegressionModel implements IgniteModel<Vector, Double>, Exportable<LinearRegressionModel>, MLWritable, MLReadable {
+public final class LinearRegressionModel implements IgniteModel<Vector, Double>, Exportable<LinearRegressionModel>,
+        JSONWritable, JSONReadable, PMMLReadable, PMMLWritable {
     /** */
     private static final long serialVersionUID = -105984600091550226L;
 
@@ -120,7 +118,6 @@ public final class LinearRegressionModel implements IgniteModel<Vector, Double>,
 
     /** {@inheritDoc} */
     @Override public int hashCode() {
-
         return Objects.hash(weights, intercept);
     }
 
@@ -154,70 +151,72 @@ public final class LinearRegressionModel implements IgniteModel<Vector, Double>,
     }
 
     @Override
-    public LinearRegressionModel load(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
-                PMML pmml = PMMLUtil.unmarshal(is);
+    public LinearRegressionModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
 
-                RegressionModel linRegMdl = (RegressionModel) pmml.getModels().get(0);
+        LinearRegressionModelJSONExportModel linearRegressionJSONExportModel;
+        try {
+            linearRegressionJSONExportModel = mapper
+                    .readValue(new File(path.toAbsolutePath().toString()), LinearRegressionModelJSONExportModel.class);
 
-                RegressionTable regTbl = linRegMdl.getRegressionTables().get(0);
+            return linearRegressionJSONExportModel.convert();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
-                Vector coefficients = new DenseVector(regTbl.getNumericPredictors().size());
+        return null;
+    }
 
-                for (int i = 0; i < regTbl.getNumericPredictors().size(); i++)
-                    coefficients.set(i, regTbl.getNumericPredictors().get(i).getCoefficient());
+    @Override
+    public LinearRegressionModel fromPMML(Path path) {
+        try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+            PMML pmml = PMMLUtil.unmarshal(is);
 
-                double interceptor = regTbl.getIntercept();
+            RegressionModel linRegMdl = (RegressionModel) pmml.getModels().get(0);
 
-                return new LinearRegressionModel(coefficients, interceptor);
-            } catch (IOException | JAXBException | SAXException e) {
-                e.printStackTrace();
-            }
-            return null;
-        } else if (mdlFormat == ModelFormat.JSON) {
-            ObjectMapper mapper = new ObjectMapper();
+            RegressionTable regTbl = linRegMdl.getRegressionTables().get(0);
 
-            LinearRegressionModelJSONExportModel linearRegressionJSONExportModel;
-            try {
-                linearRegressionJSONExportModel = mapper
-                        .readValue(new File(path.toAbsolutePath().toString()), LinearRegressionModelJSONExportModel.class);
+            Vector coefficients = new DenseVector(regTbl.getNumericPredictors().size());
 
-                return linearRegressionJSONExportModel.convert();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            for (int i = 0; i < regTbl.getNumericPredictors().size(); i++)
+                coefficients.set(i, regTbl.getNumericPredictors().get(i).getCoefficient());
+
+            double interceptor = regTbl.getIntercept();
+
+            return new LinearRegressionModel(coefficients, interceptor);
+        } catch (IOException | JAXBException | SAXException e) {
+            e.printStackTrace();
         }
         return null;
     }
 
     @Override
-    public void save(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
-                RegressionTable regressionTable = new RegressionTable();
-                regressionTable.setIntercept(intercept);
+    public void toPMML(Path path) {
+        try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
+            RegressionTable regressionTable = new RegressionTable();
+            regressionTable.setIntercept(intercept);
 
-                for (int i = 0; i < weights.size(); i++) {
-                    regressionTable.addNumericPredictors(new NumericPredictor().setCoefficient(weights.get(i)));
-                }
-
-                RegressionModel regressionModel = new RegressionModel()
-                        .addRegressionTables(regressionTable);
-
-                Header header = new Header();
-                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
-                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
-                        .addModels(regressionModel);
-
-                PMMLUtil.marshal(pmml, out);
-
-            } catch (Exception e) {
-                e.printStackTrace();
+            for (int i = 0; i < weights.size(); i++) {
+                regressionTable.addNumericPredictors(new NumericPredictor().setCoefficient(weights.get(i)));
             }
 
-        } else {
-            ObjectMapper mapper = new ObjectMapper();
+            RegressionModel regressionModel = new RegressionModel()
+                    .addRegressionTables(regressionTable);
+
+            Header header = new Header();
+            header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
+            PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
+                    .addModels(regressionModel);
+
+            PMMLUtil.marshal(pmml, out);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override public void toJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
 
             try {
                 LinearRegressionModelJSONExportModel exportModel = new LinearRegressionModelJSONExportModel();
@@ -230,7 +229,6 @@ public final class LinearRegressionModel implements IgniteModel<Vector, Double>,
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
     }
 
     private static class LinearRegressionModelJSONExportModel extends JSONModel {

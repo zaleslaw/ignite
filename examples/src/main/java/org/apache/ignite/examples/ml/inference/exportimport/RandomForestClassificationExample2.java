@@ -28,9 +28,7 @@ import org.apache.ignite.examples.ml.util.SandboxMLCache;
 import org.apache.ignite.ml.dataset.feature.FeatureMeta;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
-import org.apache.ignite.ml.tree.DecisionTreeModel;
 import org.apache.ignite.ml.tree.randomforest.RandomForestClassifierTrainer;
 import org.apache.ignite.ml.tree.randomforest.RandomForestModel;
 import org.apache.ignite.ml.tree.randomforest.data.FeaturesCountSelectionStrategies;
@@ -93,16 +91,10 @@ public class RandomForestClassificationExample2 {
 
                 System.out.println(">>> Trained model: " + randomForestMdl.toString(true));
 
-                /*Path pmmlMdlPath = Paths.get("C:\\ignite\\rf.pmml");
-                randomForestMdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory*/
-
                 Path jsonMdlPath = Paths.get("C:\\ignite\\rf.json");
-                randomForestMdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+                randomForestMdl.toJSON(jsonMdlPath); // TODO: write to the root in tmp directory
 
-                /*RandomForestModel pmmlMdl = new RandomForestModel().load(pmmlMdlPath, ModelFormat.PMML);
-                System.out.println(pmmlMdl.toString(true));*/
-
-                RandomForestModel jsonMdl = new RandomForestModel().load(jsonMdlPath, ModelFormat.JSON);
+                RandomForestModel jsonMdl = new RandomForestModel().fromJSON(jsonMdlPath);
                 System.out.println(jsonMdl.toString(true));
 
                 int amountOfErrors = 0;

@@ -23,7 +23,6 @@ import org.apache.ignite.Ignition;
 import org.apache.ignite.cache.affinity.rendezvous.RendezvousAffinityFunction;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.LabeledDummyVectorizer;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.structures.LabeledVector;
 import org.apache.ignite.ml.tree.DecisionTreeModel;
@@ -80,15 +79,15 @@ public class DecisionTreeRegressionTrainerExample2 {
 
 
                 Path pmmlMdlPath = Paths.get("C:\\ignite\\rdt.pmml");
-                mdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory
+                mdl.toPMML(pmmlMdlPath); // TODO: write to the root in tmp directory
 
                 Path jsonMdlPath = Paths.get("C:\\ignite\\rdt.json");
-                mdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+                mdl.toJSON(jsonMdlPath); // TODO: write to the root in tmp directory
 
-                DecisionTreeModel pmmlMdl = new DecisionTreeModel().load(pmmlMdlPath, ModelFormat.PMML);
+                DecisionTreeModel pmmlMdl = new DecisionTreeModel().fromPMML(pmmlMdlPath);
                 System.out.println(pmmlMdl.toString(true));
 
-                DecisionTreeModel jsonMdl = new DecisionTreeModel().load(jsonMdlPath, ModelFormat.JSON);
+                DecisionTreeModel jsonMdl = new DecisionTreeModel().fromJSON(jsonMdlPath);
                 System.out.println(jsonMdl.toString(true));
 
 

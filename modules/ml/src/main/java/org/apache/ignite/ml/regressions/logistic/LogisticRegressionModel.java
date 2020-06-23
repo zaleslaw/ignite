@@ -21,15 +21,12 @@ import java.io.*;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Objects;
-
+import javax.xml.bind.JAXBException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.IgniteModel;
-import org.apache.ignite.ml.inference.exchange.JSONModel;
-import org.apache.ignite.ml.inference.exchange.MLReadable;
-import org.apache.ignite.ml.inference.exchange.MLWritable;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
+import org.apache.ignite.ml.inference.exchange.*;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
@@ -40,12 +37,11 @@ import org.dmg.pmml.regression.RegressionTable;
 import org.jpmml.model.PMMLUtil;
 import org.xml.sax.SAXException;
 
-import javax.xml.bind.JAXBException;
-
 /**
  * Logistic regression (logit model) is a generalized linear model used for binomial regression.
  */
-public final class LogisticRegressionModel implements IgniteModel<Vector, Double>, Exportable<LogisticRegressionModel>, MLWritable, MLReadable {
+public final class LogisticRegressionModel implements IgniteModel<Vector, Double>, Exportable<LogisticRegressionModel>,
+        JSONWritable, JSONReadable, PMMLWritable, PMMLReadable {
     /** */
     private static final long serialVersionUID = -133984600091550776L;
 
@@ -225,28 +221,55 @@ public final class LogisticRegressionModel implements IgniteModel<Vector, Double
     }
 
     @Override
-    public LogisticRegressionModel load(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
-                PMML pmml = PMMLUtil.unmarshal(is);
+    public LogisticRegressionModel fromPMML(Path path) {
+        try (InputStream is = new FileInputStream(new File(path.toAbsolutePath().toString()))) {
+            PMML pmml = PMMLUtil.unmarshal(is);
 
-                RegressionModel logRegMdl = (RegressionModel) pmml.getModels().get(0);
+            RegressionModel logRegMdl = (RegressionModel) pmml.getModels().get(0);
 
-                RegressionTable regTbl = logRegMdl.getRegressionTables().get(0);
+            RegressionTable regTbl = logRegMdl.getRegressionTables().get(0);
 
-                Vector coefficients = new DenseVector(regTbl.getNumericPredictors().size());
+            Vector coefficients = new DenseVector(regTbl.getNumericPredictors().size());
 
-                for (int i = 0; i < regTbl.getNumericPredictors().size(); i++)
-                    coefficients.set(i, regTbl.getNumericPredictors().get(i).getCoefficient());
+            for (int i = 0; i < regTbl.getNumericPredictors().size(); i++)
+                coefficients.set(i, regTbl.getNumericPredictors().get(i).getCoefficient());
 
-                double interceptor = regTbl.getIntercept();
+            double interceptor = regTbl.getIntercept();
 
-                return new LogisticRegressionModel(coefficients, interceptor);
-            } catch (IOException | JAXBException | SAXException e) {
-                e.printStackTrace();
+            return new LogisticRegressionModel(coefficients, interceptor);
+        } catch (IOException | JAXBException | SAXException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    @Override
+    public void toPMML(Path path) {
+        try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
+            RegressionTable regressionTable = new RegressionTable();
+            regressionTable.setIntercept(intercept);
+
+            for (int i = 0; i < weights.size(); i++) {
+                regressionTable.addNumericPredictors(new NumericPredictor().setCoefficient(weights.get(i)));
             }
-            return null;
-        } else if (mdlFormat == ModelFormat.JSON) {
+
+            RegressionModel regressionModel = new RegressionModel()
+                    .addRegressionTables(regressionTable);
+
+            Header header = new Header();
+            header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
+            PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
+                    .addModels(regressionModel);
+
+            PMMLUtil.marshal(pmml, out);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public LogisticRegressionModel fromJSON(Path path) {
             ObjectMapper mapper = new ObjectMapper();
 
             LogisticRegressionJSONExportModel logisticRegressionJSONExportModel;
@@ -258,36 +281,10 @@ public final class LogisticRegressionModel implements IgniteModel<Vector, Double
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
         return null;
     }
 
-    @Override
-    public void save(Path path, ModelFormat mdlFormat) {
-        if (mdlFormat == ModelFormat.PMML) {
-            try (OutputStream out = new FileOutputStream(new File(path.toAbsolutePath().toString()))) {
-                RegressionTable regressionTable = new RegressionTable();
-                regressionTable.setIntercept(intercept);
-
-                for (int i = 0; i < weights.size(); i++) {
-                    regressionTable.addNumericPredictors(new NumericPredictor().setCoefficient(weights.get(i)));
-                }
-
-                RegressionModel regressionModel = new RegressionModel()
-                        .addRegressionTables(regressionTable);
-
-                Header header = new Header();
-                header.setApplication(new Application().setName("Apache Ignite").setVersion("2.9.0-SNAPSHOT"));
-                PMML pmml = new PMML(Version.PMML_4_3.getVersion(), header, new DataDictionary())
-                        .addModels(regressionModel);
-
-                PMMLUtil.marshal(pmml, out);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-        } else {
+    @Override public void toJSON(Path path) {
             ObjectMapper mapper = new ObjectMapper();
 
             try {
@@ -303,9 +300,8 @@ public final class LogisticRegressionModel implements IgniteModel<Vector, Double
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
-    }
 
+    }
 
     private static class LogisticRegressionJSONExportModel extends JSONModel {
         /**

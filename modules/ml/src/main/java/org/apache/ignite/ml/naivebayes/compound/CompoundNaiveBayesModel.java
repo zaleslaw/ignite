@@ -17,14 +17,22 @@
 
 package org.apache.ignite.ml.naivebayes.compound;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ignite.ml.Exportable;
 import org.apache.ignite.ml.Exporter;
 import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.environment.deploy.DeployableObject;
+import org.apache.ignite.ml.inference.exchange.JSONReadable;
+import org.apache.ignite.ml.inference.exchange.JSONWritable;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.naivebayes.discrete.DiscreteNaiveBayesModel;
@@ -34,7 +42,8 @@ import org.apache.ignite.ml.naivebayes.gaussian.GaussianNaiveBayesModel;
  * A compound Naive Bayes model which uses a composition of{@code GaussianNaiveBayesModel} and {@code
  * DiscreteNaiveBayesModel}.
  */
-public class CompoundNaiveBayesModel implements IgniteModel<Vector, Double>, Exportable<CompoundNaiveBayesModel>, DeployableObject {
+public class CompoundNaiveBayesModel implements IgniteModel<Vector, Double>, Exportable<CompoundNaiveBayesModel>,
+        JSONWritable, JSONReadable, DeployableObject {
     /** Serial version uid. */
     private static final long serialVersionUID = -5045925321135798960L;
 
@@ -55,6 +64,9 @@ public class CompoundNaiveBayesModel implements IgniteModel<Vector, Double>, Exp
 
     /** Feature ids which should be skipped in Discrete model. */
     private Collection<Integer> discreteFeatureIdsToSkip = Collections.emptyList();
+
+    public CompoundNaiveBayesModel() {
+    }
 
     /** {@inheritDoc} */
     @Override public <P> void saveModel(Exporter<CompoundNaiveBayesModel, P> exporter, P path) {
@@ -89,6 +101,22 @@ public class CompoundNaiveBayesModel implements IgniteModel<Vector, Double>, Exp
     /** Returns a discrete model. */
     public DiscreteNaiveBayesModel getDiscreteModel() {
         return discreteModel;
+    }
+
+    public double[] getPriorProbabilities() {
+        return priorProbabilities;
+    }
+
+    public double[] getLabels() {
+        return labels;
+    }
+
+    public Collection<Integer> getGaussianFeatureIdsToSkip() {
+        return gaussianFeatureIdsToSkip;
+    }
+
+    public Collection<Integer> getDiscreteFeatureIdsToSkip() {
+        return discreteFeatureIdsToSkip;
     }
 
     /** Sets prior probabilities. */
@@ -155,7 +183,22 @@ public class CompoundNaiveBayesModel implements IgniteModel<Vector, Double>, Exp
     }
 
     /** {@inheritDoc} */
+    @JsonIgnore
     @Override public List<Object> getDependencies() {
         return Arrays.asList(discreteModel, gaussianModel);
+    }
+
+    @Override
+    public CompoundNaiveBayesModel fromJSON(Path path) {
+        ObjectMapper mapper = new ObjectMapper();
+        CompoundNaiveBayesModel mdl;
+        try {
+            mdl = mapper.readValue(new File(path.toAbsolutePath().toString()), CompoundNaiveBayesModel.class);
+
+            return mdl;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

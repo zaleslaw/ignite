@@ -30,7 +30,6 @@ import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
 import org.apache.ignite.ml.environment.LearningEnvironmentBuilder;
 import org.apache.ignite.ml.environment.logging.ConsoleLogger;
 import org.apache.ignite.ml.environment.parallelism.ParallelismStrategy;
-import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.tree.randomforest.RandomForestModel;
 import org.apache.ignite.ml.tree.randomforest.RandomForestRegressionTrainer;
@@ -99,16 +98,10 @@ public class RandomForestRegressionExample2 {
 
                 System.out.println(">>> Trained model: " + randomForestMdl.toString(true));
 
-                                /*Path pmmlMdlPath = Paths.get("C:\\ignite\\rf.pmml");
-                randomForestMdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory*/
-
                 Path jsonMdlPath = Paths.get("C:\\ignite\\regrf.json");
-                randomForestMdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+                randomForestMdl.toJSON(jsonMdlPath); // TODO: write to the root in tmp directory
 
-                /*RandomForestModel pmmlMdl = new RandomForestModel().load(pmmlMdlPath, ModelFormat.PMML);
-                System.out.println(pmmlMdl.toString(true));*/
-
-                RandomForestModel jsonMdl = new RandomForestModel().load(jsonMdlPath, ModelFormat.JSON);
+                RandomForestModel jsonMdl = new RandomForestModel().fromJSON(jsonMdlPath);
                 System.out.println(jsonMdl.toString(true));
 
                 double mse = 0.0;
