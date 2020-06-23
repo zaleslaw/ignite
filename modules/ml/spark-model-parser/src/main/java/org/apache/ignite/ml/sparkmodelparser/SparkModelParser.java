@@ -33,7 +33,7 @@ import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.clustering.kmeans.KMeansModel;
 import org.apache.ignite.ml.composition.ModelsComposition;
-import org.apache.ignite.ml.composition.boosting.GDBTrainer;
+import org.apache.ignite.ml.composition.boosting.GDBModel;
 import org.apache.ignite.ml.composition.predictionsaggregator.MeanValuePredictionsAggregator;
 import org.apache.ignite.ml.composition.predictionsaggregator.OnMajorityPredictionsAggregator;
 import org.apache.ignite.ml.composition.predictionsaggregator.WeightedPredictionsAggregator;
@@ -494,7 +494,7 @@ public class SparkModelParser {
             final List<IgniteModel<Vector, Double>> models = new ArrayList<>();
             nodesByTreeId.forEach((key, nodes) -> models.add(NodeData.buildDecisionTreeModel(nodes)));
 
-            return new GDBTrainer.GDBModel(models, new WeightedPredictionsAggregator(treeWeights), lbMapper);
+            return new GDBModel(models, new WeightedPredictionsAggregator(treeWeights), lbMapper);
         }
         catch (IOException e) {
             String msg = "Error reading parquet file: " + e.getMessage();

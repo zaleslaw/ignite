@@ -15,14 +15,8 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.examples.ml.tree.randomforest;
+package org.apache.ignite.examples.ml.inference.exportimport;
 
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import javax.cache.Cache;
-import org.apache.commons.math3.util.Precision;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.Ignition;
@@ -33,44 +27,56 @@ import org.apache.ignite.examples.ml.util.SandboxMLCache;
 import org.apache.ignite.ml.dataset.feature.FeatureMeta;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
+import org.apache.ignite.ml.environment.LearningEnvironmentBuilder;
+import org.apache.ignite.ml.environment.logging.ConsoleLogger;
+import org.apache.ignite.ml.environment.parallelism.ParallelismStrategy;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
-import org.apache.ignite.ml.tree.randomforest.RandomForestClassifierTrainer;
 import org.apache.ignite.ml.tree.randomforest.RandomForestModel;
+import org.apache.ignite.ml.tree.randomforest.RandomForestRegressionTrainer;
 import org.apache.ignite.ml.tree.randomforest.data.FeaturesCountSelectionStrategies;
 
+import javax.cache.Cache;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 /**
- * Example represents a solution for the task of wine classification based on a
- * <a href ="https://en.wikipedia.org/wiki/Random_forest">Random Forest</a> implementation for
- * multi-classification.
+ * Example represents a solution for the task of price predictions for houses in Boston based on a
+ * <a href ="https://en.wikipedia.org/wiki/Random_forest">Random Forest</a> implementation for regression.
  * <p>
  * Code in this example launches Ignite grid and fills the cache with test data points (based on the
- * <a href="https://archive.ics.uci.edu/ml/machine-learning-databases/wine/">Wine recognition dataset</a>).</p>
+ * <a href="https://archive.ics.uci.edu/ml/machine-learning-databases/housing/">Boston Housing dataset</a>).</p>
  * <p>
- * After that it initializes the  {@link RandomForestClassifierTrainer} with thread pool for multi-thread learning and
- * trains the model based on the specified data using random forest regression algorithm.</p>
+ * After that it initializes the {@link RandomForestRegressionTrainer} and trains the model based on the specified data
+ * using random forest regression algorithm.</p>
  * <p>
  * Finally, this example loops over the test set of data points, compares prediction of the trained model to the
- * expected outcome (ground truth), and evaluates accuracy of the model.</p>
+ * expected outcome (ground truth), and evaluates model quality in terms of Mean Squared Error (MSE) and Mean Absolute
+ * Error (MAE).</p>
  * <p>
  * You can change the test data used in this example and re-run it to explore this algorithm further.</p>
  */
-public class RandomForestClassificationExample {
+public class RandomForestRegressionExample2 {
     /**
      * Run example.
      */
     public static void main(String[] args) throws IOException {
         System.out.println();
-        System.out.println(">>> Random Forest multi-class classification algorithm over cached dataset usage example started.");
+        System.out.println(">>> Random Forest regression algorithm over cached dataset usage example started.");
         // Start ignite grid.
         try (Ignite ignite = Ignition.start("examples/config/example-ignite.xml")) {
             System.out.println(">>> Ignite grid started.");
 
             IgniteCache<Integer, Vector> dataCache = null;
             try {
-                dataCache = new SandboxMLCache(ignite).fillCacheWith(MLSandboxDatasets.WINE_RECOGNITION);
+                dataCache = new SandboxMLCache(ignite).fillCacheWith(MLSandboxDatasets.BOSTON_HOUSE_PRICES);
 
                 AtomicInteger idx = new AtomicInteger(0);
-                RandomForestClassifierTrainer classifier = new RandomForestClassifierTrainer(
+                RandomForestRegressionTrainer trainer = new RandomForestRegressionTrainer(
                     IntStream.range(0, dataCache.get(1).size() - 1).mapToObj(
                         x -> new FeatureMeta("", idx.getAndIncrement(), false)).collect(Collectors.toList())
                 ).withAmountOfTrees(101)
@@ -80,15 +86,33 @@ public class RandomForestClassificationExample {
                     .withSubSampleSize(0.3)
                     .withSeed(0);
 
-                System.out.println(">>> Configured trainer: " + classifier.getClass().getSimpleName());
+                trainer.withEnvironmentBuilder(LearningEnvironmentBuilder.defaultBuilder()
+                    .withParallelismStrategyTypeDependency(ParallelismStrategy.ON_DEFAULT_POOL)
+                    .withLoggingFactoryDependency(ConsoleLogger.Factory.LOW)
+                );
+
+                System.out.println(">>> Configured trainer: " + trainer.getClass().getSimpleName());
 
                 Vectorizer<Integer, Vector, Integer, Double> vectorizer = new DummyVectorizer<Integer>()
                     .labeled(Vectorizer.LabelCoordinate.FIRST);
-                RandomForestModel randomForestMdl = classifier.fit(ignite, dataCache, vectorizer);
+                RandomForestModel randomForestMdl = trainer.fit(ignite, dataCache, vectorizer);
 
                 System.out.println(">>> Trained model: " + randomForestMdl.toString(true));
 
-                int amountOfErrors = 0;
+                                /*Path pmmlMdlPath = Paths.get("C:\\ignite\\rf.pmml");
+                randomForestMdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory*/
+
+                Path jsonMdlPath = Paths.get("C:\\ignite\\regrf.json");
+                randomForestMdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+
+                /*RandomForestModel pmmlMdl = new RandomForestModel().load(pmmlMdlPath, ModelFormat.PMML);
+                System.out.println(pmmlMdl.toString(true));*/
+
+                RandomForestModel jsonMdl = new RandomForestModel().load(jsonMdlPath, ModelFormat.JSON);
+                System.out.println(jsonMdl.toString(true));
+
+                double mse = 0.0;
+                double mae = 0.0;
                 int totalAmount = 0;
 
                 try (QueryCursor<Cache.Entry<Integer, Vector>> observations = dataCache.query(new ScanQuery<>())) {
@@ -97,20 +121,24 @@ public class RandomForestClassificationExample {
                         Vector inputs = val.copyOfRange(1, val.size());
                         double groundTruth = val.get(0);
 
-                        double prediction = randomForestMdl.predict(inputs);
+                        double prediction = jsonMdl.predict(inputs);
+
+                        mse += Math.pow(prediction - groundTruth, 2.0);
+                        mae += Math.abs(prediction - groundTruth);
 
                         totalAmount++;
-                        if (!Precision.equals(groundTruth, prediction, Precision.EPSILON))
-                            amountOfErrors++;
                     }
 
                     System.out.println("\n>>> Evaluated model on " + totalAmount + " data points.");
 
-                    System.out.println("\n>>> Absolute amount of errors " + amountOfErrors);
-                    System.out.println("\n>>> Accuracy " + (1 - amountOfErrors / (double)totalAmount));
-                    System.out.println(">>> Random Forest multi-class classification algorithm over cached dataset usage example completed.");
-                }
+                    mse /= totalAmount;
+                    System.out.println("\n>>> Mean squared error (MSE) " + mse);
 
+                    mae /= totalAmount;
+                    System.out.println("\n>>> Mean absolute error (MAE) " + mae);
+
+                    System.out.println(">>> Random Forest regression algorithm over cached dataset usage example completed.");
+                }
             }
             finally {
                 if (dataCache != null)

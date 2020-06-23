@@ -15,13 +15,8 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.examples.ml.tree.randomforest;
+package org.apache.ignite.examples.ml.inference.exportimport;
 
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import javax.cache.Cache;
 import org.apache.commons.math3.util.Precision;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
@@ -33,10 +28,20 @@ import org.apache.ignite.examples.ml.util.SandboxMLCache;
 import org.apache.ignite.ml.dataset.feature.FeatureMeta;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.ignite.ml.tree.DecisionTreeModel;
 import org.apache.ignite.ml.tree.randomforest.RandomForestClassifierTrainer;
 import org.apache.ignite.ml.tree.randomforest.RandomForestModel;
 import org.apache.ignite.ml.tree.randomforest.data.FeaturesCountSelectionStrategies;
+
+import javax.cache.Cache;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Example represents a solution for the task of wine classification based on a
@@ -54,7 +59,7 @@ import org.apache.ignite.ml.tree.randomforest.data.FeaturesCountSelectionStrateg
  * <p>
  * You can change the test data used in this example and re-run it to explore this algorithm further.</p>
  */
-public class RandomForestClassificationExample {
+public class RandomForestClassificationExample2 {
     /**
      * Run example.
      */
@@ -88,6 +93,18 @@ public class RandomForestClassificationExample {
 
                 System.out.println(">>> Trained model: " + randomForestMdl.toString(true));
 
+                /*Path pmmlMdlPath = Paths.get("C:\\ignite\\rf.pmml");
+                randomForestMdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory*/
+
+                Path jsonMdlPath = Paths.get("C:\\ignite\\rf.json");
+                randomForestMdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+
+                /*RandomForestModel pmmlMdl = new RandomForestModel().load(pmmlMdlPath, ModelFormat.PMML);
+                System.out.println(pmmlMdl.toString(true));*/
+
+                RandomForestModel jsonMdl = new RandomForestModel().load(jsonMdlPath, ModelFormat.JSON);
+                System.out.println(jsonMdl.toString(true));
+
                 int amountOfErrors = 0;
                 int totalAmount = 0;
 
@@ -97,7 +114,7 @@ public class RandomForestClassificationExample {
                         Vector inputs = val.copyOfRange(1, val.size());
                         double groundTruth = val.get(0);
 
-                        double prediction = randomForestMdl.predict(inputs);
+                        double prediction = jsonMdl.predict(inputs);
 
                         totalAmount++;
                         if (!Precision.equals(groundTruth, prediction, Precision.EPSILON))

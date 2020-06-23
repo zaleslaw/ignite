@@ -17,7 +17,6 @@
 
 package org.apache.ignite.examples.ml.inference.exportimport;
 
-import org.apache.commons.math3.util.Precision;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.Ignition;
@@ -27,33 +26,33 @@ import org.apache.ignite.ml.dataset.feature.extractor.impl.LabeledDummyVectorize
 import org.apache.ignite.ml.inference.exchange.ModelFormat;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.structures.LabeledVector;
-import org.apache.ignite.ml.tree.DecisionTreeClassificationTrainer;
 import org.apache.ignite.ml.tree.DecisionTreeModel;
+import org.apache.ignite.ml.tree.DecisionTreeRegressionTrainer;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Random;
 
 /**
- * Example of using distributed {@link DecisionTreeClassificationTrainer}.
+ * Example of using distributed {@link DecisionTreeRegressionTrainer}.
  * <p>
- * Code in this example launches Ignite grid and fills the cache with pseudo random training data points.</p>
+ * Code in this example launches Ignite grid and fills the cache with generated test data points ({@code sin(x)} on
+ * interval {@code [0, 10)}).</p>
  * <p>
  * After that it creates classification trainer and uses it to train the model on the training set.</p>
  * <p>
- * Finally, this example loops over the pseudo randomly generated test set of data points, applies the trained model,
- * and compares prediction to expected outcome.</p>
+ * Finally, this example loops over the test data points, applies the trained model, and compares prediction to expected
+ * outcome (ground truth).</p>
  * <p>
  * You can change the test data used in this example and re-run it to explore this algorithm further.</p>
  */
-public class DecisionTreeClassificationTrainerExample2 {
+public class DecisionTreeRegressionTrainerExample2 {
     /**
      * Executes example.
      *
      * @param args Command line arguments, none required.
      */
     public static void main(String... args) {
-        System.out.println(">>> Decision tree classification trainer example started.");
+        System.out.println(">>> Decision tree regression trainer example started.");
 
         // Start ignite grid.
         try (Ignite ignite = Ignition.start("examples/config/example-ignite.xml")) {
@@ -68,29 +67,22 @@ public class DecisionTreeClassificationTrainerExample2 {
             try {
                 trainingSet = ignite.createCache(trainingSetCfg);
 
-                Random rnd = new Random(0);
-
                 // Fill training data.
-                for (int i = 0; i < 1000; i++)
-                    trainingSet.put(i, generatePoint(rnd));
+                generatePoints(trainingSet);
 
-                // Create classification trainer.
-                DecisionTreeClassificationTrainer trainer = new DecisionTreeClassificationTrainer(4, 0);
+                // Create regression trainer.
+                DecisionTreeRegressionTrainer trainer = new DecisionTreeRegressionTrainer(10, 0);
 
                 // Train decision tree model.
-                LabeledDummyVectorizer<Integer, Double> vectorizer = new LabeledDummyVectorizer<>();
-                DecisionTreeModel mdl = trainer.fit(
-                    ignite,
-                    trainingSet,
-                    vectorizer
-                );
+                DecisionTreeModel mdl = trainer.fit(ignite, trainingSet, new LabeledDummyVectorizer<>());
 
-                System.out.println(mdl.toString(true));
+                System.out.println(">>> Decision tree regression model: " + mdl);
 
-                Path pmmlMdlPath = Paths.get("C:\\ignite\\dt.pmml");
+
+                Path pmmlMdlPath = Paths.get("C:\\ignite\\rdt.pmml");
                 mdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory
 
-                Path jsonMdlPath = Paths.get("C:\\ignite\\dt.json");
+                Path jsonMdlPath = Paths.get("C:\\ignite\\rdt.json");
                 mdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
 
                 DecisionTreeModel pmmlMdl = new DecisionTreeModel().load(pmmlMdlPath, ModelFormat.PMML);
@@ -99,22 +91,21 @@ public class DecisionTreeClassificationTrainerExample2 {
                 DecisionTreeModel jsonMdl = new DecisionTreeModel().load(jsonMdlPath, ModelFormat.JSON);
                 System.out.println(jsonMdl.toString(true));
 
-                int correctPredictions = 0;
-                for (int i = 0; i < 1000; i++) {
-                    LabeledVector<Double> pnt = generatePoint(rnd);
 
-                    double prediction = jsonMdl.predict(pnt.features());
-                    double lbl = pnt.label();
+                System.out.println(">>> ---------------------------------");
+                System.out.println(">>> | Prediction\t| Ground Truth\t|");
+                System.out.println(">>> ---------------------------------");
 
-                    if (i % 50 == 1)
-                        System.out.printf(">>> test #: %d\t\t predicted: %.4f\t\tlabel: %.4f\n", i, prediction, lbl);
+                // Calculate score.
+                for (int x = 0; x < 10; x++) {
+                    double predicted = pmmlMdl.predict(VectorUtils.of(x));
 
-                    if (Precision.equals(prediction, lbl, Precision.EPSILON))
-                        correctPredictions++;
+                    System.out.printf(">>> | %.4f\t\t| %.4f\t\t|\n", predicted, Math.sin(x));
                 }
 
-                System.out.println(">>> Accuracy: " + correctPredictions / 10.0 + "%");
-                System.out.println(">>> Decision tree classification trainer example completed.");
+                System.out.println(">>> ---------------------------------");
+
+                System.out.println(">>> Decision tree regression trainer example completed.");
             }
             finally {
                 trainingSet.destroy();
@@ -126,17 +117,14 @@ public class DecisionTreeClassificationTrainerExample2 {
     }
 
     /**
-     * Generate point with {@code x} in (-0.5, 0.5) and {@code y} in the same interval. If {@code x * y > 0} then label
-     * is 1, otherwise 0.
-     *
-     * @param rnd Random.
-     * @return Point with label.
+     * Generates {@code sin(x)} on interval {@code [0, 10)} and loads into the specified cache.
      */
-    private static LabeledVector<Double> generatePoint(Random rnd) {
+    private static void generatePoints(IgniteCache<Integer, LabeledVector<Double>> trainingSet) {
+        for (int i = 0; i < 1000; i++) {
+            double x = i / 100.0;
+            double y = Math.sin(x);
 
-        double x = rnd.nextDouble() - 0.5;
-        double y = rnd.nextDouble() - 0.5;
-
-        return new LabeledVector<>(VectorUtils.of(x, y), x * y > 0 ? 1. : 0.);
+            trainingSet.put(i, new LabeledVector<>(VectorUtils.of(x), y));
+        }
     }
 }

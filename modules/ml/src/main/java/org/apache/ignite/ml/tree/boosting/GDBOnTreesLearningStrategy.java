@@ -22,7 +22,7 @@ import java.util.List;
 import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.composition.ModelsComposition;
 import org.apache.ignite.ml.composition.boosting.GDBLearningStrategy;
-import org.apache.ignite.ml.composition.boosting.GDBTrainer;
+import org.apache.ignite.ml.composition.boosting.GDBModel;
 import org.apache.ignite.ml.composition.boosting.convergence.ConvergenceChecker;
 import org.apache.ignite.ml.composition.predictionsaggregator.WeightedPredictionsAggregator;
 import org.apache.ignite.ml.dataset.Dataset;
@@ -57,7 +57,7 @@ public class GDBOnTreesLearningStrategy extends GDBLearningStrategy {
     }
 
     /** {@inheritDoc} */
-    @Override public <K, V> List<IgniteModel<Vector, Double>> update(GDBTrainer.GDBModel mdlToUpdate,
+    @Override public <K, V> List<IgniteModel<Vector, Double>> update(GDBModel mdlToUpdate,
                                                                      DatasetBuilder<K, V> datasetBuilder, Preprocessor<K, V> vectorizer) {
 
         LearningEnvironment environment = envBuilder.buildForTrainer();

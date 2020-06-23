@@ -15,22 +15,26 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.examples.ml.tree.boosting;
+package org.apache.ignite.examples.ml.inference.exportimport;
 
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.cache.affinity.rendezvous.RendezvousAffinityFunction;
 import org.apache.ignite.configuration.CacheConfiguration;
-import org.apache.ignite.ml.composition.ModelsComposition;
 import org.apache.ignite.ml.composition.boosting.GDBModel;
 import org.apache.ignite.ml.composition.boosting.convergence.mean.MeanAbsValueConvergenceCheckerFactory;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DoubleArrayVectorizer;
+import org.apache.ignite.ml.inference.exchange.ModelFormat;
+import org.apache.ignite.ml.math.functions.IgniteFunction;
 import org.apache.ignite.ml.math.primitives.vector.VectorUtils;
 import org.apache.ignite.ml.trainers.DatasetTrainer;
 import org.apache.ignite.ml.tree.boosting.GDBBinaryClassifierOnTreesTrainer;
 import org.jetbrains.annotations.NotNull;
+
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * Example represents a solution for the task of classification learning based on Gradient Boosting on trees
@@ -39,7 +43,7 @@ import org.jetbrains.annotations.NotNull;
  * <p>
  * In this example dataset is created automatically by meander function {@code f(x) = [sin(x) > 0]}.</p>
  */
-public class GDBOnTreesClassificationTrainerExample {
+public class GDBOnTreesClassificationTrainerExample2 {
     /**
      * Run example.
      *
@@ -69,13 +73,27 @@ public class GDBOnTreesClassificationTrainerExample {
                     new DoubleArrayVectorizer<Integer>().labeled(Vectorizer.LabelCoordinate.LAST)
                 );
 
+                 /*Path pmmlMdlPath = Paths.get("C:\\ignite\\rf.pmml");
+                randomForestMdl.save(pmmlMdlPath, ModelFormat.PMML); // TODO: write to the root in tmp directory*/
+
+                Path jsonMdlPath = Paths.get("C:\\ignite\\gdb.json");
+                mdl.save(jsonMdlPath, ModelFormat.JSON); // TODO: write to the root in tmp directory
+
+                /*GDBModel pmmlMdl = new RandomForestModel().load(pmmlMdlPath, ModelFormat.PMML);
+                System.out.println(pmmlMdl.toString(true));*/
+
+                IgniteFunction<Double, Double> lbMapper = lb -> lb > 0.5 ? 1.0 : 0.0;
+                GDBModel jsonMdl = new GDBModel().load(jsonMdlPath, ModelFormat.JSON).withLblMapping(lbMapper);
+
+                System.out.println(jsonMdl.toString(true));
+
                 System.out.println(">>> ---------------------------------");
                 System.out.println(">>> | Prediction\t| Valid answer\t|");
                 System.out.println(">>> ---------------------------------");
 
                 // Calculate score.
                 for (int x = -5; x < 5; x++) {
-                    double predicted = mdl.predict(VectorUtils.of(x));
+                    double predicted = jsonMdl.predict(VectorUtils.of(x));
 
                     System.out.printf(">>> | %.4f\t\t| %.4f\t\t|\n", predicted, Math.sin(x) < 0 ? 0.0 : 1.0);
                 }

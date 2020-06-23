@@ -246,6 +246,4 @@ public class DecisionTreeModel implements IgniteModel<Vector, Double>, MLWritabl
         }
 
     }
-
-
 }
